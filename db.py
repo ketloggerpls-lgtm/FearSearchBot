@@ -259,7 +259,10 @@ def db_save_vdf_history(results: list[dict], config_hash: str = "", filename: st
                     r.get("vac_banned", False),
                     r.get("vac_days", 0),
                     r.get("game_bans", 0),
-                    bool(r.get("yooma_data", {}).get("found", False)),
+                    any(
+                        p.get("status") == "active"
+                        for p in r.get("yooma_data", {}).get("punishments", [])
+                    ) if r.get("yooma_data", {}).get("found") else False,
                     _extract_yooma_reason(r.get("yooma_data", {})),
                     r.get("admin_group", ""),
                     config_hash,
