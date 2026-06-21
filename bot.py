@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import traceback
 import signal
+import hashlib
 import db as _db
 
 load_dotenv()
@@ -4891,10 +4892,11 @@ def _save_vdf_checks_to_file():
         print(f"⚠️ Ошибка сохранения vdf_checks.json: {e}")
 
 
-def _save_vdf_check(results: list[dict], filename: str, attachment_url: str = "", message_url: str = "") -> int:
+def _save_vdf_check(results: list[dict], filename: str, attachment_url: str = "", message_url: str = "", vdf_text: str = "") -> int:
     global _vdf_check_counter
     _vdf_check_counter += 1
-    _vdf_checks[_vdf_check_counter] = {
+    check_id = _vdf_check_counter
+    _vdf_checks[check_id] = {
         "results": results,
         "filename": filename,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -4903,7 +4905,18 @@ def _save_vdf_check(results: list[dict], filename: str, attachment_url: str = ""
         "steamids": [r.get("steamid") for r in results if r.get("steamid")],
     }
     _save_vdf_checks_to_file()
-    return _vdf_check_counter
+
+    # ── Сохраняем в PostgreSQL ──
+    try:
+        steamids = [r.get("steamid") for r in results if r.get("steamid")]
+        if steamids and vdf_text:
+            config_hash = hashlib.sha256(vdf_text.encode("utf-8", errors="ignore")).hexdigest()[:64]
+            _db.db_save_config_accounts(config_hash, steamids, filename)
+            _db.db_save_vdf_history(results, config_hash=config_hash, filename=filename, check_id=check_id)
+    except Exception as e:
+        print(f"⚠️ Ошибка сохранения VDF в PostgreSQL: {e}")
+
+    return check_id
 
 
 _load_vdf_checks()
@@ -9380,7 +9393,7 @@ async def on_message(message: discord.Message):
                             "admin_group":  admin_group,
                         })
 
-                check_num = _save_vdf_check(results, attachment.filename, attachment.url, message.jump_url)
+                check_num = _save_vdf_check(results, attachment.filename, attachment.url, message.jump_url, vdf_text=text)
                 embeds = _build_vdf_embeds(results, attachment.filename)
                 await msg.edit(content=f"✅ Проверено **{len(steamids)}** аккаунтов • Проверка **#{check_num}**\nℹ️ Используй `/checkinfo #{check_num}` или `/checkinfo <steamid>` для подробной информации", embed=embeds[0])
                 for e in embeds[1:]:
