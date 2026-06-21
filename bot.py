@@ -283,14 +283,6 @@ def _load_newbies_panel() -> dict:
             pass
     return {}
 
-def _load_admin_online_panel() -> dict:
-    if ADMIN_ONLINE_PANEL_FILE.exists():
-        try:
-            return json.loads(ADMIN_ONLINE_PANEL_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
-
 def _load_staff_punish_panel() -> dict:
     if STAFF_PUNISH_PANEL_FILE.exists():
         try:
@@ -880,7 +872,6 @@ async def _fetch_external_steam_info(session: aiohttp.ClientSession, steamid: st
                 html = await r.text()
                 
                 # Парсим дату регистрации
-                import re
                 match_date = re.search(r"Account Created:</i>\s*([^<]+)<", html)
                 if match_date:
                     date_str = match_date.group(1).strip()
