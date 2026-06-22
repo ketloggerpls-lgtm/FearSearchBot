@@ -182,7 +182,7 @@ export default function VDFHistoryPage() {
                   onClick={() => setExpandedId(isExpanded ? null : check.id)}
                   className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.02] transition-colors text-left"
                 >
-                  <span className="text-sm text-gray-600 font-mono w-10">#{check.id}</span>
+                  <span className="text-sm text-gray-600 font-mono w-10">#{checks.length - index}</span>
                   <div className="flex items-center gap-2 text-white min-w-0 flex-1">
                     <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
                     <span className="truncate text-sm" title={check.filename}>{check.filename}</span>

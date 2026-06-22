@@ -75,7 +75,7 @@ func main() {
 	mux.Handle("/api/punishments/search", handlers.AuthMiddleware(cfg, http.HandlerFunc(fearAPI.SearchPunishments)))
 	mux.Handle("/api/punishments/all", handlers.AuthMiddleware(cfg, http.HandlerFunc(fearAPI.GetAllPunishments)))
 	mux.Handle("/api/punishments/admin", handlers.AuthMiddleware(cfg, http.HandlerFunc(fearAPI.GetPunishmentsByAdmin)))
-	mux.Handle("/api/punishments/staff-stats", handlers.AuthMiddleware(cfg, http.HandlerFunc(staffStats.GetStaffStats)))
+	mux.Handle("/api/punishments/staff-stats", handlers.AuthMiddleware(cfg, http.HandlerFunc(fearAPI.GetStaffStats)))
 	mux.Handle("/api/staff/punishments", handlers.AuthMiddleware(cfg, http.HandlerFunc(staffStats.GetPunishmentsList)))
 	mux.Handle("/api/staff/punishments/by-admin", handlers.AuthMiddleware(cfg, http.HandlerFunc(staffStats.GetPunishmentsByAdmin)))
 	mux.Handle("/api/staff/punishments/trend", handlers.AuthMiddleware(cfg, http.HandlerFunc(staffStats.GetPunishmentsTrend)))

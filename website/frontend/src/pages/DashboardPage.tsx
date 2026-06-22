@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activityData, setActivityData] = useState<any[]>([]);
   const [activitySummary, setActivitySummary] = useState<any>(null);
+  const [serversData, setServersData] = useState<any[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -56,11 +57,14 @@ export default function DashboardPage() {
       api.getDashboardStats().catch(() => ({ data: { total_staff: 0, staff_by_role: {} } })),
       api.getServerActivity(24).catch(() => ({ data: [] })),
       api.getServerActivitySummary().catch(() => null),
-    ]).then(([staffRes, statsRes, activityRes, summaryRes]) => {
+      api.getServers().catch(() => []),
+    ]).then(([staffRes, statsRes, activityRes, summaryRes, serversRes]) => {
       setStaff(staffRes.data || []);
       setStats(statsRes.data);
       setActivityData(activityRes?.data || []);
       setActivitySummary(summaryRes);
+      const servers = Array.isArray(serversRes) ? serversRes : (serversRes?.data || serversRes?.servers || []);
+      setServersData(servers);
       setLoading(false);
     });
   }, []);
@@ -91,6 +95,10 @@ export default function DashboardPage() {
     { label: 'Avg (24h)', value: activitySummary?.avg_24h || 0, icon: Activity, color: 'from-purple-500 to-purple-600' },
     { label: 'Snapshots', value: activitySummary?.snapshots_24h || 0, icon: Clock, color: 'from-amber-500 to-amber-600' },
   ];
+
+  const totalServerPlayers = serversData.reduce((sum: number, s: any) => sum + (s.players_online || s.live_data?.players?.length || 0), 0);
+  const totalMaxPlayers = serversData.reduce((sum: number, s: any) => sum + (s.max_players || 0), 0);
+  const totalServers = serversData.length;
 
   const topStaff = staff.sort((a, b) => (b.level || 0) - (a.level || 0)).slice(0, 6);
 
@@ -152,6 +160,52 @@ export default function DashboardPage() {
           </motion.div>
         ))}
       </div>
+
+      {/* FearProject Server Stats */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.25 }}
+        className="glass-card p-6"
+      >
+        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+          <Globe className="w-5 h-5 text-accent-blue" />
+          FearProject — Статистика серверов
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-[#0c0e14] rounded-xl p-4 border border-white/5">
+            <p className="text-xs text-gray-500 mb-1">Серверов</p>
+            <p className="text-2xl font-bold text-white">{totalServers}</p>
+          </div>
+          <div className="bg-[#0c0e14] rounded-xl p-4 border border-white/5">
+            <p className="text-xs text-gray-500 mb-1">Онлайн</p>
+            <p className="text-2xl font-bold text-emerald-400">{totalServerPlayers}</p>
+          </div>
+          <div className="bg-[#0c0e14] rounded-xl p-4 border border-white/5">
+            <p className="text-xs text-gray-500 mb-1">Макс. мест</p>
+            <p className="text-2xl font-bold text-gray-300">{totalMaxPlayers}</p>
+          </div>
+          <div className="bg-[#0c0e14] rounded-xl p-4 border border-white/5">
+            <p className="text-xs text-gray-500 mb-1">Заполненность</p>
+            <p className="text-2xl font-bold text-blue-400">{totalMaxPlayers > 0 ? Math.round((totalServerPlayers / totalMaxPlayers) * 100) : 0}%</p>
+          </div>
+        </div>
+        {serversData.length > 0 && (
+          <div className="mt-4 space-y-2 max-h-[200px] overflow-y-auto">
+            {serversData.map((s: any, i: number) => {
+              const online = s.players_online || s.live_data?.players?.length || 0;
+              const max = s.max_players || 0;
+              const pct = max > 0 ? Math.round((online / max) * 100) : 0;
+              return (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 bg-[#0c0e14] rounded-lg border border-white/5">
+                  <span className="text-sm text-white font-medium truncate min-w-[140px]">{s.name || `Server ${s.id}`}</span>
+                  <div className="flex-1 h-2 bg-dark-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-400 min-w-[60px] text-right">{online}/{max}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
 
       {/* Server Activity Chart */}
       {chartData.length > 0 && (

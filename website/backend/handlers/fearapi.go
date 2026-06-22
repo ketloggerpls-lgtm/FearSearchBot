@@ -197,7 +197,56 @@ func (h *FearAPIHandler) GetServers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *FearAPIHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	h.proxyGet(w, r, "https://api.fearproject.ru/leaderboard")
+	type lbPlayer struct {
+		SteamID string  `json:"steam_id"`
+		Name    string  `json:"name"`
+		Kills   int     `json:"kills"`
+		Deaths  int     `json:"deaths"`
+		KD      float64 `json:"kd"`
+		Avatar  string  `json:"avatar"`
+	}
+	type lbResp struct {
+		Players []lbPlayer `json:"players"`
+		Total   int        `json:"total"`
+	}
+
+	allPlayers := make([]lbPlayer, 0, 1000)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+
+	for page := 1; page <= 100; page++ {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(p int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			apiURL := fmt.Sprintf("https://api.fearproject.ru/leaderboard?page=%d&limit=10", p)
+			body := h.fearGetRaw(apiURL)
+			if body == nil {
+				return
+			}
+			var data lbResp
+			if err := json.Unmarshal(body, &data); err != nil {
+				return
+			}
+			mu.Lock()
+			allPlayers = append(allPlayers, data.Players...)
+			mu.Unlock()
+		}(page)
+	}
+	wg.Wait()
+
+	if len(allPlayers) > 1000 {
+		allPlayers = allPlayers[:1000]
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"players": allPlayers,
+		"total":   len(allPlayers),
+	})
 }
 
 func (h *FearAPIHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -362,28 +411,8 @@ func (h *FearAPIHandler) GetPunishmentsByAdmin(w http.ResponseWriter, r *http.Re
 func (h *FearAPIHandler) GetAllPunishments(w http.ResponseWriter, r *http.Request) {
 	pType := r.URL.Query().Get("type")
 	status := r.URL.Query().Get("status")
-	page := r.URL.Query().Get("page")
+	adminSteamID := r.URL.Query().Get("admin_steamid")
 	search := r.URL.Query().Get("search")
-	if page == "" {
-		page = "1"
-	}
-
-	apiURL := fmt.Sprintf("https://api.fearproject.ru/punishments/search?page=%s&limit=50", page)
-	if pType != "" {
-		apiURL += "&type=" + pType
-	}
-	if status != "" {
-		apiURL += "&status=" + status
-	}
-	if search != "" {
-		apiURL += "&q=" + search
-	}
-
-	body := h.fearGetRaw(apiURL)
-	if body == nil {
-		http.Error(w, `{"error":"fear api error"}`, http.StatusBadGateway)
-		return
-	}
 
 	type rawPunishment struct {
 		ID           int64  `json:"id"`
@@ -402,15 +431,51 @@ func (h *FearAPIHandler) GetAllPunishments(w http.ResponseWriter, r *http.Reques
 		Total       int             `json:"total"`
 	}
 
-	var resp rawResp
-	if err := json.Unmarshal(body, &resp); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(body)
-		return
+	allPunishments := make([]rawPunishment, 0)
+	for page := 1; page <= 200; page++ {
+		apiURL := fmt.Sprintf("https://api.fearproject.ru/punishments/search?page=%d&limit=50", page)
+		if pType != "" {
+			apiURL += "&type=" + pType
+		}
+		if status != "" {
+			apiURL += "&status=" + status
+		}
+		if search != "" {
+			apiURL += "&q=" + search
+		}
+		if adminSteamID != "" {
+			apiURL += "&q=" + adminSteamID
+		}
+
+		body := h.fearGetRaw(apiURL)
+		if body == nil {
+			break
+		}
+		var data rawResp
+		if err := json.Unmarshal(body, &data); err != nil {
+			break
+		}
+		if len(data.Punishments) == 0 {
+			break
+		}
+		allPunishments = append(allPunishments, data.Punishments...)
+		if len(data.Punishments) < 50 {
+			break
+		}
+	}
+
+	if adminSteamID != "" {
+		filtered := make([]rawPunishment, 0)
+		for _, p := range allPunishments {
+			if strings.TrimSpace(p.AdminSteamID) == strings.TrimSpace(adminSteamID) {
+				filtered = append(filtered, p)
+			}
+		}
+		allPunishments = filtered
 	}
 
 	steamIDsToResolve := make([]string, 0)
-	for _, p := range resp.Punishments {
+	for _, p := range allPunishments {
 		if p.Name == "" && p.SteamID != "" {
 			steamIDsToResolve = append(steamIDsToResolve, p.SteamID)
 		}
@@ -431,21 +496,40 @@ func (h *FearAPIHandler) GetAllPunishments(w http.ResponseWriter, r *http.Reques
 		h.resolveNames(unique)
 	}
 
-	for i := range resp.Punishments {
-		if resp.Punishments[i].Name == "" {
-			if p := h.GetName(resp.Punishments[i].SteamID); p.Name != "" {
-				resp.Punishments[i].Name = p.Name
+	for i := range allPunishments {
+		if allPunishments[i].Name == "" {
+			if p := h.GetName(allPunishments[i].SteamID); p.Name != "" {
+				allPunishments[i].Name = p.Name
 			}
 		}
-		if resp.Punishments[i].AdminName == "" {
-			if p := h.GetName(resp.Punishments[i].AdminSteamID); p.Name != "" {
-				resp.Punishments[i].AdminName = p.Name
+		if allPunishments[i].AdminName == "" {
+			if p := h.GetName(allPunishments[i].AdminSteamID); p.Name != "" {
+				allPunishments[i].AdminName = p.Name
 			}
 		}
 	}
 
+	result := make([]interface{}, 0, len(allPunishments))
+	for _, p := range allPunishments {
+		result = append(result, map[string]interface{}{
+			"id":            p.ID,
+			"steamid":       p.SteamID,
+			"admin_steamid": p.AdminSteamID,
+			"admin_name":    p.AdminName,
+			"name":          p.Name,
+			"reason":        p.Reason,
+			"type":          p.Type,
+			"status":        p.Status,
+			"duration":      p.Duration,
+			"created":       p.Created,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"punishments": result,
+		"total":       len(result),
+	})
 }
 
 func (h *FearAPIHandler) CheckBan(w http.ResponseWriter, r *http.Request) {
@@ -638,7 +722,7 @@ func (h *FearAPIHandler) GetStaffStats(w http.ResponseWriter, r *http.Request) {
 	for sid, stats := range statsMap {
 		for ptype := 1; ptype <= 2; ptype++ {
 			page := 1
-			for page <= 10 {
+			for page <= 100 {
 				apiURL := fmt.Sprintf("https://api.fearproject.ru/punishments/search?q=%s&page=%d&limit=100&type=%d", sid, page, ptype)
 				body := h.fearGetRaw(apiURL)
 				if body == nil {

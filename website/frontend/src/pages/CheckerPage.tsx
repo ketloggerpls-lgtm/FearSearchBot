@@ -35,7 +35,10 @@ interface VDFResult {
   fear_banned: boolean;
   fear_reason?: string;
   fear_unban_time?: string;
+  ban_duration_days?: number;
+  ban_expiry_date?: string;
   vac_banned: boolean;
+  vac_days_ago?: number;
   game_bans?: number;
   yooma_banned: boolean;
   yooma_reason?: string;
@@ -188,37 +191,43 @@ export default function CheckerPage() {
               const banned = r.fear_banned || r.vac_banned || (r.game_bans != null && r.game_bans > 0) || r.yooma_banned;
               return (
                 <motion.div key={r.steam_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                  className={`bg-[#12151e] rounded-xl border p-4 ${banned ? 'border-red-500/20' : 'border-white/5'}`}>
+                  className={`bg-[#12151e] rounded-xl border p-5 ${banned ? 'border-red-500/20' : 'border-white/5'}`}>
                   <div className="flex items-center gap-4">
                     {r.avatar ? (
-                      <img src={r.avatar} alt={r.name} className="w-12 h-12 rounded-xl object-cover ring-1 ring-white/10" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      <img src={r.avatar} alt={r.name} className="w-14 h-14 rounded-xl object-cover ring-1 ring-white/10" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : (
-                      <div className="w-12 h-12 bg-[#1e2333] rounded-xl flex items-center justify-center">
-                        {banned ? <ShieldX className="w-5 h-5 text-red-400" /> : <Check className="w-5 h-5 text-green-400" />}
+                      <div className="w-14 h-14 bg-[#1e2333] rounded-xl flex items-center justify-center">
+                        {banned ? <ShieldX className="w-6 h-6 text-red-400" /> : <Check className="w-6 h-6 text-green-400" />}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{r.name || r.steam_id}</p>
-                      <p className="text-xs text-gray-500 font-mono">{r.steam_id}</p>
+                      <p className="text-base font-semibold text-white truncate">{r.name || r.steam_id}</p>
+                      <p className="text-sm text-gray-500 font-mono">{r.steam_id}</p>
+                      {r.fear_banned && r.fear_reason && (
+                        <p className="text-xs text-red-400 mt-0.5">Причина: {r.fear_reason}</p>
+                      )}
+                      {r.fear_banned && r.ban_expiry_date && (
+                        <p className="text-xs text-yellow-400">До: {r.ban_expiry_date} {r.ban_duration_days ? `(${r.ban_duration_days} дн.)` : ''}</p>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {r.fear_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400">Fear: {r.fear_reason || 'Обход'}</span>}
-                      {r.vac_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400">VAC</span>}
-                      {(r.game_bans != null && r.game_bans > 0) && <span className="px-2 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[11px] text-orange-400">Game Ban</span>}
-                      {r.yooma_banned && <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[11px] text-purple-400">Yooma: {r.yooma_reason || 'Обход'}</span>}
+                    <div className="flex flex-wrap gap-2">
+                      {r.fear_banned && <span className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">Fear: {r.fear_reason || 'Обход'}</span>}
+                      {r.vac_banned && <span className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">VAC {r.vac_days_ago ? `(${r.vac_days_ago} дн.)` : ''}</span>}
+                      {(r.game_bans != null && r.game_bans > 0) && <span className="px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-400 font-bold">Game Ban (×{r.game_bans})</span>}
+                      {r.yooma_banned && <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded text-xs text-purple-400 font-bold">Yooma: {r.yooma_reason || 'Обход'}</span>}
                     </div>
                     <div className="flex gap-2">
                       <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Fear
+                        className="flex items-center gap-1 px-3 py-2 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Fear
                       </a>
                       <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Steam
+                        className="flex items-center gap-1 px-3 py-2 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Steam
                       </a>
                       <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Yooma
+                        className="flex items-center gap-1 px-3 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Yooma
                       </a>
                     </div>
                   </div>
@@ -244,68 +253,74 @@ export default function CheckerPage() {
 
               return (
                 <motion.div key={r.steam_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className={`bg-[#12151e] rounded-xl border p-4 ${isBanned ? 'border-red-500/20' : 'border-white/5'}`}>
+                  className={`bg-[#12151e] rounded-xl border p-5 ${isBanned ? 'border-red-500/20' : 'border-white/5'}`}>
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-3 min-w-[220px]">
                       {r.avatar ? (
-                        <img src={r.avatar} alt={r.name} className="w-10 h-10 rounded-lg object-cover ring-1 ring-white/10" />
+                        <img src={r.avatar} alt={r.name} className="w-12 h-12 rounded-lg object-cover ring-1 ring-white/10" />
                       ) : (
-                        <div className="w-10 h-10 bg-[#1e2333] rounded-lg flex items-center justify-center">
-                          <Users className="w-4 h-4 text-gray-500" />
+                        <div className="w-12 h-12 bg-[#1e2333] rounded-lg flex items-center justify-center">
+                          <Users className="w-5 h-5 text-gray-500" />
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{r.name || 'Unknown'}</p>
-                        <p className="text-xs text-gray-500 font-mono">{r.steam_id}</p>
+                        <p className="text-base font-semibold text-white truncate">{r.name || 'Unknown'}</p>
+                        <p className="text-sm text-gray-500 font-mono">{r.steam_id}</p>
                       </div>
                     </div>
 
                     <div className="text-center min-w-[100px]">
-                      <p className="text-[10px] text-gray-600 uppercase mb-0.5">Где бан</p>
+                      <p className="text-xs text-gray-600 uppercase mb-0.5">Где бан</p>
                       {isBanned ? (
-                        <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400 font-bold">{banSource}</span>
+                        <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">{banSource}</span>
                       ) : (
-                        <span className="text-[11px] text-emerald-400">Чист</span>
+                        <span className="text-xs text-emerald-400">Чист</span>
+                      )}
+                    </div>
+
+                    <div className="min-w-[140px]">
+                      <p className="text-xs text-gray-600 uppercase mb-0.5">Причина</p>
+                      <p className="text-sm text-white truncate max-w-[180px]">{isBanned ? banReason : '—'}</p>
+                    </div>
+
+                    <div className="min-w-[80px] text-center">
+                      <p className="text-xs text-gray-600 uppercase mb-0.5">K/D</p>
+                      <p className="text-sm text-gray-300">{r.kd != null ? r.kd.toFixed(2) : '—'}</p>
+                      {r.kills != null && (
+                        <p className="text-[11px] text-gray-600">{(r.kills || 0).toLocaleString()} / {(r.deaths || 0).toLocaleString()}</p>
                       )}
                     </div>
 
                     <div className="min-w-[120px]">
-                      <p className="text-[10px] text-gray-600 uppercase mb-0.5">Причина</p>
-                      <p className="text-xs text-white truncate max-w-[160px]">{isBanned ? banReason : '—'}</p>
-                    </div>
-
-                    <div className="min-w-[80px] text-center">
-                      <p className="text-[10px] text-gray-600 uppercase mb-0.5">K/D</p>
-                      <p className="text-xs text-gray-300">{r.kd != null ? r.kd.toFixed(2) : '—'}</p>
-                      {r.kills != null && (
-                        <p className="text-[9px] text-gray-600">{(r.kills || 0).toLocaleString()} / {(r.deaths || 0).toLocaleString()}</p>
+                      <p className="text-xs text-gray-600 uppercase mb-0.5">Срок</p>
+                      <p className={`text-sm font-medium ${isBanned ? 'text-red-400' : 'text-emerald-400'}`}>{duration}</p>
+                      {r.ban_expiry_date && r.ban_expiry_date !== 'Навсегда' && (
+                        <p className="text-[11px] text-yellow-400">До: {r.ban_expiry_date}</p>
+                      )}
+                      {r.ban_duration_days != null && r.ban_duration_days > 0 && (
+                        <p className="text-[11px] text-gray-500">{r.ban_duration_days} дн. осталось</p>
                       )}
                     </div>
 
-                    <div className="min-w-[100px]">
-                      <p className="text-[10px] text-gray-600 uppercase mb-0.5">Срок</p>
-                      <p className={`text-xs font-medium ${isBanned ? 'text-red-400' : 'text-emerald-400'}`}>{duration}</p>
-                    </div>
-
                     <div className="flex items-center gap-1.5 ml-auto">
-                      {r.fear_banned && <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[9px] text-red-400 font-bold">Fear</span>}
-                      {r.vac_banned && <span className="px-1.5 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[9px] text-red-400 font-bold">VAC</span>}
-                      {r.game_bans != null && r.game_bans > 0 && <span className="px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] text-orange-400 font-bold">Game</span>}
-                      {r.yooma_banned && <span className="px-1.5 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[9px] text-purple-400 font-bold">Yooma</span>}
+                      {r.fear_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400 font-bold">Fear</span>}
+                      {r.vac_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400 font-bold">VAC</span>}
+                      {r.game_bans != null && r.game_bans > 0 && <span className="px-2 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[11px] text-orange-400 font-bold">Game (×{r.game_bans})</span>}
+                      {r.yooma_banned && <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[11px] text-purple-400 font-bold">Yooma</span>}
                     </div>
 
                     <div className="flex gap-1.5">
                       <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Fear
+                        className="flex items-center gap-1 px-3 py-2 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Fear
                       </a>
                       <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Steam
+                        className="flex items-center gap-1 px-3 py-2 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Steam
                       </a>
                       <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-xs font-medium transition-all">
-                        <ExternalLink className="w-3 h-3" />Yooma
+                        className="flex items-center gap-1 px-3 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-sm font-medium transition-all">
+                        <ExternalLink className="w-3.5 h-3.5" />Yooma
                       </a>
                     </div>
                   </div>

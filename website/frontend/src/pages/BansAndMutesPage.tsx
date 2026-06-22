@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Search, AlertTriangle, Clock, ShieldX, RefreshCw, Users, ExternalLink } from 'lucide-react';
+import { Search, AlertTriangle, Clock, ShieldX, RefreshCw, Users, ExternalLink, TrendingUp, Scissors, Ban } from 'lucide-react';
 import { api } from '../services/api';
 import type { Punishment } from '../types';
 
@@ -24,6 +24,15 @@ function shortReason(s?: string): string {
 interface ProfileInfo { name?: string; avatar?: string; }
 type ProfileMap = Record<string, ProfileInfo>;
 
+interface StaffSummary {
+  steamid: string;
+  name: string;
+  bans: number;
+  mutes: number;
+  removed: number;
+  total: number;
+}
+
 export default function BansAndMutesPage() {
   const [activeTab, setActiveTab] = useState<Tab>('bans');
   const [search, setSearch] = useState('');
@@ -35,6 +44,9 @@ export default function BansAndMutesPage() {
   const [staffSteamIds, setStaffSteamIds] = useState<Set<string>>(new Set());
   const [profiles, setProfiles] = useState<ProfileMap>({});
   const [filterAdmin, setFilterAdmin] = useState('');
+  const [staffSearch, setStaffSearch] = useState('');
+  const [staffSummary, setStaffSummary] = useState<StaffSummary | null>(null);
+  const [staffSearching, setStaffSearching] = useState(false);
 
   useEffect(() => {
     api.getStaff()
@@ -54,16 +66,20 @@ export default function BansAndMutesPage() {
     setLoading(true);
     try {
       const type = activeTab === 'bans' ? '1' : '2';
-      const res = await api.getAllPunishments({ page, type, search: search || undefined });
+      const params: any = { type };
+      if (staffSearch) {
+        params.admin_steamid = staffSearch;
+      }
+      const res = await api.getAllPunishments(params);
       let items: Punishment[] = res.punishments || [];
 
-      if (staffSteamIds.size > 0) {
+      if (!staffSearch && staffSteamIds.size > 0) {
         items = items.filter((p) => staffSteamIds.has(p.admin_steamid));
       }
 
       items.sort((a: any, b: any) => (b.created || 0) - (a.created || 0));
       setPunishments(items);
-      setTotal(res.total || items.length);
+      setTotal(items.length);
       setLastRefresh(new Date());
 
       const idsToResolve = new Set<string>();
@@ -85,15 +101,43 @@ export default function BansAndMutesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, page, search, staffSteamIds]);
+  }, [activeTab, search, staffSteamIds, staffSearch]);
 
   useEffect(() => {
     fetchPunishments();
-    const interval = setInterval(fetchPunishments, 30000);
+    const interval = setInterval(fetchPunishments, 60000);
     return () => clearInterval(interval);
   }, [fetchPunishments]);
 
-  useEffect(() => { setPage(1); }, [activeTab, search]);
+  useEffect(() => { setPage(1); }, [activeTab, search, staffSearch]);
+
+  const handleStaffSearch = async () => {
+    if (!staffSearch.trim()) {
+      setStaffSummary(null);
+      return;
+    }
+    setStaffSearching(true);
+    try {
+      const res = await api.getAllPunishments({ admin_steamid: staffSearch.trim() });
+      const items: Punishment[] = res.punishments || [];
+      const bans = items.filter(p => p.type === 1);
+      const mutes = items.filter(p => p.type === 2);
+      const removed = items.filter(p => p.status === 2);
+      const profileInfo = profiles[staffSearch.trim()];
+      setStaffSummary({
+        steamid: staffSearch.trim(),
+        name: profileInfo?.name || staffSearch.trim(),
+        bans: bans.length,
+        mutes: mutes.length,
+        removed: removed.length,
+        total: items.length,
+      });
+    } catch {
+      setStaffSummary(null);
+    } finally {
+      setStaffSearching(false);
+    }
+  };
 
   const getStatusLabel = (status: number) => {
     switch (status) {
@@ -131,7 +175,7 @@ export default function BansAndMutesPage() {
     <div className="max-w-[1100px] mx-auto">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Баны и муты</h1>
+          <h1 className="text-2xl font-bold text-white">Наказания</h1>
           <p className="text-sm text-[#8a8a93] mt-1">
             Только от стаффа • Найдено: {displayPunishments.length} • Обновлено: {lastRefresh.toLocaleTimeString('ru-RU')}
           </p>
@@ -141,6 +185,50 @@ export default function BansAndMutesPage() {
           <RefreshCw className="w-4 h-4" />Обновить
         </button>
       </motion.div>
+
+      {/* Staff Search */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}
+        className="bg-[#12151e] rounded-xl border border-white/5 p-4 mb-4">
+        <div className="flex gap-3 items-center">
+          <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <input type="text" placeholder="Поиск по SteamID стаффа (например: 76561198...)"
+            value={staffSearch} onChange={(e) => setStaffSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleStaffSearch()}
+            className="flex-1 px-4 py-2.5 bg-[#0c0e14] border border-white/5 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/30 transition-all" />
+          <button onClick={handleStaffSearch} disabled={staffSearching}
+            className="px-4 py-2.5 bg-[#4f7cff] hover:bg-[#3d6aff] text-white text-sm font-medium rounded-xl transition-all disabled:opacity-50">
+            {staffSearching ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Найти'}
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Staff Summary Card */}
+      {staffSummary && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          className="grid grid-cols-5 gap-4 mb-4">
+          <div className="bg-[#12151e] rounded-xl p-4 border border-white/5">
+            <div className="flex items-center gap-2 mb-2"><ShieldX className="w-4 h-4 text-red-400" /><span className="text-xs text-gray-500">Баны</span></div>
+            <p className="text-2xl font-bold text-white">{staffSummary.bans}</p>
+          </div>
+          <div className="bg-[#12151e] rounded-xl p-4 border border-white/5">
+            <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-4 h-4 text-amber-400" /><span className="text-xs text-gray-500">Муты</span></div>
+            <p className="text-2xl font-bold text-white">{staffSummary.mutes}</p>
+          </div>
+          <div className="bg-[#12151e] rounded-xl p-4 border border-white/5">
+            <div className="flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-blue-400" /><span className="text-xs text-gray-500">Всего</span></div>
+            <p className="text-2xl font-bold text-white">{staffSummary.total}</p>
+          </div>
+          <div className="bg-[#12151e] rounded-xl p-4 border border-white/5">
+            <div className="flex items-center gap-2 mb-2"><Scissors className="w-4 h-4 text-emerald-400" /><span className="text-xs text-gray-500">Снято</span></div>
+            <p className="text-2xl font-bold text-white">{staffSummary.removed}</p>
+          </div>
+          <div className="bg-[#12151e] rounded-xl p-4 border border-white/5">
+            <div className="flex items-center gap-2 mb-2"><Users className="w-4 h-4 text-purple-400" /><span className="text-xs text-gray-500">Сотрудник</span></div>
+            <p className="text-lg font-bold text-white truncate">{staffSummary.name}</p>
+            <p className="text-[11px] text-gray-500 font-mono truncate">{staffSummary.steamid}</p>
+          </div>
+        </motion.div>
+      )}
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
         className="bg-[#12151e] rounded-xl border border-white/5 p-4 mb-6">
@@ -236,15 +324,6 @@ export default function BansAndMutesPage() {
           </div>
         ) : (
           <div className="text-center py-12"><p className="text-gray-500">Наказания не найдены</p></div>
-        )}
-        {total > 50 && (
-          <div className="flex items-center justify-center gap-2 py-4 border-t border-white/5">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-              className="px-3 py-1.5 bg-[#1a1f2e] border border-white/5 rounded-lg text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">Назад</button>
-            <span className="text-xs text-gray-500">Стр. {page}</span>
-            <button onClick={() => setPage(p => p + 1)} disabled={displayPunishments.length < 50}
-              className="px-3 py-1.5 bg-[#1a1f2e] border border-white/5 rounded-lg text-xs text-gray-400 hover:text-white disabled:opacity-30 transition-all">Далее</button>
-          </div>
         )}
       </motion.div>
     </div>

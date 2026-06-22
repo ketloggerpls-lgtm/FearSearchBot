@@ -98,12 +98,13 @@ class ApiService {
     return this.request(`/api/punishments/admin?admin_steamid=${adminSteamId}`);
   }
 
-  async getAllPunishments(params?: { page?: number; type?: string; status?: string; search?: string }) {
+  async getAllPunishments(params?: { page?: number; type?: string; status?: string; search?: string; admin_steamid?: string }) {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.type) searchParams.set('type', params.type);
     if (params?.status) searchParams.set('status', params.status);
     if (params?.search) searchParams.set('search', params.search);
+    if (params?.admin_steamid) searchParams.set('admin_steamid', params.admin_steamid);
     const qs = searchParams.toString();
     return this.request(`/api/punishments/all${qs ? '?' + qs : ''}`);
   }

@@ -57,17 +57,29 @@ export default function StatsPage() {
       const steamIds = adminList.map(a => a.steamid || a.steam_id).filter(Boolean) as string[];
       if (steamIds.length > 0) {
         const res = await api.getStaffStats(steamIds);
-        const statsList: StaffStats[] = res.stats || [];
-
-        for (const s of statsList) {
+        const statsArr: StaffStats[] = Array.isArray(res.stats) ? res.stats : (Array.isArray(res) ? res : []);
+        
+        for (const s of statsArr) {
           if (!s.name || s.name === s.steamid) {
             const admin = adminList.find(a => (a.steamid === s.steamid) || (a.steam_id === s.steamid));
             if (admin) {
               s.name = admin.name || admin.nickname || s.steamid;
             }
           }
+          if (s.bans === undefined && s.total_bans !== undefined) {
+            s.bans = s.total_bans;
+          }
+          if (s.mutes === undefined && s.total_mutes !== undefined) {
+            s.mutes = s.total_mutes;
+          }
+          if (s.total === undefined) {
+            s.total = (s.bans || 0) + (s.mutes || 0);
+          }
+          if (s.removed === undefined) {
+            s.removed = (s.removed_bans || 0) + (s.removed_mutes || 0);
+          }
         }
-        setStats(statsList);
+        setStats(statsArr);
       }
       setLastRefresh(new Date());
     } catch {

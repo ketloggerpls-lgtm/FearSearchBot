@@ -24,28 +24,30 @@ func NewCheckHandler(cfg *config.Config, db *database.DB) *CheckHandler {
 }
 
 type AccountResult struct {
-	SteamID        string  `json:"steam_id"`
-	Name           string  `json:"name"`
-	Avatar         string  `json:"avatar"`
-	Status         string  `json:"status"`
-	BanType        string  `json:"ban_type,omitempty"`
-	BanReason      string  `json:"ban_reason,omitempty"`
-	BanDaysAgo     *int    `json:"ban_days_ago,omitempty"`
-	BanDate        string  `json:"ban_date,omitempty"`
-	FearBanned     bool    `json:"fear_banned"`
-	FearReason     string  `json:"fear_reason,omitempty"`
-	FearUnbanTime  string  `json:"fear_unban_time,omitempty"`
-	VACBanned      bool    `json:"vac_banned"`
-	VACDaysAgo     int     `json:"vac_days_ago,omitempty"`
-	GameBans       int     `json:"game_bans,omitempty"`
-	YoomaBanned    bool    `json:"yooma_banned"`
-	YoomaReason    string  `json:"yooma_reason,omitempty"`
-	FearURL        string  `json:"fear_url"`
-	SteamURL       string  `json:"steam_url"`
-	YoomaURL       string  `json:"yooma_url"`
-	Kills          int     `json:"kills,omitempty"`
-	Deaths         int     `json:"deaths,omitempty"`
-	KD             float64 `json:"kd,omitempty"`
+	SteamID         string  `json:"steam_id"`
+	Name            string  `json:"name"`
+	Avatar          string  `json:"avatar"`
+	Status          string  `json:"status"`
+	BanType         string  `json:"ban_type,omitempty"`
+	BanReason       string  `json:"ban_reason,omitempty"`
+	BanDaysAgo      *int    `json:"ban_days_ago,omitempty"`
+	BanDate         string  `json:"ban_date,omitempty"`
+	FearBanned      bool    `json:"fear_banned"`
+	FearReason      string  `json:"fear_reason,omitempty"`
+	FearUnbanTime   string  `json:"fear_unban_time,omitempty"`
+	BanDurationDays int     `json:"ban_duration_days,omitempty"`
+	BanExpiryDate   string  `json:"ban_expiry_date,omitempty"`
+	VACBanned       bool    `json:"vac_banned"`
+	VACDaysAgo      int     `json:"vac_days_ago,omitempty"`
+	GameBans        int     `json:"game_bans,omitempty"`
+	YoomaBanned     bool    `json:"yooma_banned"`
+	YoomaReason     string  `json:"yooma_reason,omitempty"`
+	FearURL         string  `json:"fear_url"`
+	SteamURL        string  `json:"steam_url"`
+	YoomaURL        string  `json:"yooma_url"`
+	Kills           int     `json:"kills,omitempty"`
+	Deaths          int     `json:"deaths,omitempty"`
+	KD              float64 `json:"kd,omitempty"`
 }
 
 type checkRequest struct {
@@ -507,10 +509,17 @@ func (h *CheckHandler) checkSingleAccount(steamID string) AccountResult {
 		}
 		if profile.BanInfo.UnbanTimestamp != nil {
 			if ts, ok := profile.BanInfo.UnbanTimestamp.(float64); ok && ts > 0 {
-				result.FearUnbanTime = fmt.Sprintf("до %s", time.Unix(int64(ts), 0).UTC().Format("02.01.2006 15:04"))
+				unbanTime := time.Unix(int64(ts), 0)
+				result.FearUnbanTime = fmt.Sprintf("до %s", unbanTime.UTC().Format("02.01.2006 15:04"))
+				result.BanExpiryDate = unbanTime.UTC().Format("02.01.2006 15:04")
+				daysLeft := int(time.Until(unbanTime).Hours() / 24)
+				if daysLeft > 0 {
+					result.BanDurationDays = daysLeft
+				}
 			}
 		} else if profile.BanInfo.IsBanned {
 			result.FearUnbanTime = "Навсегда"
+			result.BanExpiryDate = "Навсегда"
 		}
 	}
 
