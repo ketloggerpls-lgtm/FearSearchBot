@@ -8716,8 +8716,8 @@ async def on_ready():
         monitor_loop.start()
     if not reports_loop.is_running():
         reports_loop.start()
-    # Первичная синхронизация при старте — ждем её завершения перед запуском циклов
-    await _initial_sync()
+    # Первичная синхронизация при старте — запускаем в фоне чтобы не блокировать войс и лупы
+    asyncio.create_task(_initial_sync())
 
     if not track_loop.is_running():
         track_loop.start()

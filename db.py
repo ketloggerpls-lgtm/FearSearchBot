@@ -23,7 +23,7 @@ def _get_conn():
         return None
     if _pool is None or _pool.closed:
         try:
-            _pool = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+            _pool = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor, connect_timeout=10)
             _pool.autocommit = True
             _init_table()
             logger.info("[DB] PostgreSQL подключена")
