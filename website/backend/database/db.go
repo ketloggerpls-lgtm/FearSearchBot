@@ -731,7 +731,7 @@ func (db *DB) GetVDFChecks() ([]map[string]interface{}, error) {
 	ctx := context.Background()
 	rows, err := db.pool.Query(ctx, `
 		SELECT check_id, filename, timestamp, attachment_url, message_url, results, steamids, banned_count, COALESCE(last_recheck::text, '')
-		FROM vdf_checks ORDER BY check_id DESC LIMIT 100
+		FROM vdf_checks ORDER BY check_id DESC
 	`)
 	if err != nil {
 		return nil, err
@@ -1029,7 +1029,7 @@ func (db *DB) SaveVDFHistoryEntry(checkID int, steamID, nickname string, fearBan
 	return err
 }
 
-func (db *DB) GetVDFHistoryDetailed(limit int) ([]map[string]interface{}, error) {
+func (db *DB) GetVDFHistoryDetailed() ([]map[string]interface{}, error) {
 	if db.pool == nil {
 		return nil, fmt.Errorf("no database")
 	}
@@ -1040,8 +1040,7 @@ func (db *DB) GetVDFHistoryDetailed(limit int) ([]map[string]interface{}, error)
 		       admin_group, config_hash, filename, check_id, created_at::text
 		FROM vdf_history
 		ORDER BY id DESC
-		LIMIT $1
-	`, limit)
+	`)
 	if err != nil {
 		return nil, err
 	}

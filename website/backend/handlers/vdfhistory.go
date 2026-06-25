@@ -68,7 +68,7 @@ type vdfHistoryResult struct {
 }
 
 func (r vdfHistoryResult) isBanned() bool {
-	if r.FearBanned || r.VacBanned || r.CommunityBan || r.GameBans > 0 {
+	if r.FearBanned {
 		return true
 	}
 	if r.YoomaData == nil {
@@ -176,7 +176,7 @@ func (h *VDFHistoryHandler) writeJSON(w http.ResponseWriter, data []VDFCheckHist
 func (h *VDFHistoryHandler) computeHistory() ([]VDFCheckHistory, error) {
 	// Способ 1: из PostgreSQL vdf_history
 	if h.db != nil {
-		history, err := h.db.GetVDFHistoryDetailed(200)
+		history, err := h.db.GetVDFHistoryDetailed()
 		if err == nil && len(history) > 0 {
 			return h.buildHistoryFromDB(history), nil
 		}
@@ -328,7 +328,7 @@ func (h *VDFHistoryHandler) buildHistoryFromDB(rows []map[string]interface{}) []
 		steamids := make([]string, 0, len(g.results))
 		for _, r := range g.results {
 			steamids = append(steamids, r.SteamID)
-			if r.FearBanned || r.VacBanned || r.GameBans > 0 || r.YoomaBanned {
+			if r.FearBanned || r.YoomaBanned {
 				banned++
 			}
 		}

@@ -573,15 +573,15 @@ func (h *CheckHandler) checkSingleAccount(steamID string) AccountResult {
 		if p.VACBanned {
 			result.VACBanned = true
 			result.VACDaysAgo = p.DaysSinceLastBan
-			if !result.FearBanned {
-				result.Status = "banned"
+			if !result.FearBanned && !result.YoomaBanned {
+				result.Status = "warning"
 				result.BanType = "VAC"
 				result.BanDaysAgo = &p.DaysSinceLastBan
 			}
 		}
 		result.GameBans = p.NumberOfGameBans
-		if p.NumberOfGameBans > 0 && !result.FearBanned && !p.VACBanned {
-			result.Status = "banned"
+		if p.NumberOfGameBans > 0 && !result.FearBanned && !result.YoomaBanned {
+			result.Status = "warning"
 			result.BanType = "GAME"
 		}
 	}
@@ -591,19 +591,19 @@ func (h *CheckHandler) checkSingleAccount(steamID string) AccountResult {
 			if y.Status == "active" {
 				result.YoomaBanned = true
 				result.YoomaReason = y.Reason
-				if !result.FearBanned && !result.VACBanned {
-					result.Status = "banned"
-					result.BanType = "YOOMA"
-					result.BanReason = y.Reason
-				}
+				result.Status = "banned"
+				result.BanType = "YOOMA"
+				result.BanReason = y.Reason
 				break
 			}
 		}
 	}
 
-	if result.Status == "not_found" {
+	if result.Status == "not_found" || result.Status == "warning" {
 		if profile.Name != "" {
-			result.Status = "clean"
+			if result.Status != "warning" {
+				result.Status = "clean"
+			}
 		}
 	}
 

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Check, ShieldX, ExternalLink, Users, Upload, FileText } from 'lucide-react';
+import { Search, Check, ShieldX, ExternalLink, Users, Upload, FileText, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 
 interface AccountCheckResult {
@@ -195,16 +195,17 @@ export default function CheckerPage() {
         <AnimatePresence>
           {mode === 'vdf' ? (
             vdfResults.map((r, i) => {
-              const banned = r.fear_banned || r.vac_banned || (r.game_bans != null && r.game_bans > 0) || r.yooma_banned;
+              const banned = r.fear_banned || r.yooma_banned;
+              const warning = !banned && (r.vac_banned || (r.game_bans != null && r.game_bans > 0));
               return (
                 <motion.div key={r.steam_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
-                  className={`bg-[#12151e] rounded-xl border p-5 ${banned ? 'border-red-500/20' : 'border-white/5'}`}>
+                  className={`bg-[#12151e] rounded-xl border p-5 ${banned ? 'border-red-500/20' : warning ? 'border-yellow-500/20' : 'border-white/5'}`}>
                   <div className="flex flex-wrap items-center gap-4">
                     {r.avatar ? (
                       <img src={r.avatar} alt={r.name} className="w-14 h-14 rounded-xl object-cover ring-1 ring-white/10" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                     ) : (
                       <div className="w-14 h-14 bg-[#1e2333] rounded-xl flex items-center justify-center">
-                        {banned ? <ShieldX className="w-6 h-6 text-red-400" /> : <Check className="w-6 h-6 text-green-400" />}
+                        {banned ? <ShieldX className="w-6 h-6 text-red-400" /> : warning ? <AlertTriangle className="w-6 h-6 text-yellow-400" /> : <Check className="w-6 h-6 text-green-400" />}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
@@ -219,8 +220,8 @@ export default function CheckerPage() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {r.fear_banned && <span className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">Fear: {r.fear_reason || 'Обход'}</span>}
-                      {r.vac_banned && <span className="px-3 py-1 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">VAC {r.vac_days_ago ? `(${r.vac_days_ago} дн.)` : ''}</span>}
-                      {(r.game_bans != null && r.game_bans > 0) && <span className="px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-400 font-bold">Game Ban (×{r.game_bans})</span>}
+                      {r.vac_banned && <span className="px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-400 font-bold">VAC {r.vac_days_ago ? `(${r.vac_days_ago} дн.)` : ''}</span>}
+                      {(r.game_bans != null && r.game_bans > 0) && <span className="px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-400 font-bold">Game Ban (×{r.game_bans})</span>}
                       {r.yooma_banned && <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded text-xs text-purple-400 font-bold">Yooma: {r.yooma_reason || 'Обход'}</span>}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -244,6 +245,7 @@ export default function CheckerPage() {
           ) : (
             results.map((r, i) => {
               const isBanned = r.status === 'banned';
+              const isWarning = r.status === 'warning';
               const banSource = r.ban_type || '—';
               const banReason = r.fear_reason || r.ban_reason || '—';
 
@@ -260,7 +262,7 @@ export default function CheckerPage() {
 
               return (
                 <motion.div key={r.steam_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className={`bg-[#12151e] rounded-xl border p-5 ${isBanned ? 'border-red-500/20' : 'border-white/5'}`}>
+                  className={`bg-[#12151e] rounded-xl border p-5 ${isBanned ? 'border-red-500/20' : isWarning ? 'border-yellow-500/20' : 'border-white/5'}`}>
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-3 min-w-[220px]">
                       {r.avatar ? (
@@ -280,6 +282,8 @@ export default function CheckerPage() {
                       <p className="text-xs text-gray-600 uppercase mb-0.5">Где бан</p>
                       {isBanned ? (
                         <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-xs text-red-400 font-bold">{banSource}</span>
+                      ) : isWarning ? (
+                        <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-xs text-yellow-400 font-bold">{banSource}</span>
                       ) : (
                         <span className="text-xs text-emerald-400">Чист</span>
                       )}
@@ -287,7 +291,7 @@ export default function CheckerPage() {
 
                     <div className="min-w-[140px]">
                       <p className="text-xs text-gray-600 uppercase mb-0.5">Причина</p>
-                      <p className="text-sm text-white truncate max-w-[180px]">{isBanned ? banReason : '—'}</p>
+                      <p className="text-sm text-white truncate max-w-[180px]">{isBanned || isWarning ? banReason : '—'}</p>
                     </div>
 
                     <div className="min-w-[80px] text-center">
@@ -300,7 +304,7 @@ export default function CheckerPage() {
 
                     <div className="min-w-[120px]">
                       <p className="text-xs text-gray-600 uppercase mb-0.5">Срок</p>
-                      <p className={`text-sm font-medium ${isBanned ? 'text-red-400' : 'text-emerald-400'}`}>{duration}</p>
+                      <p className={`text-sm font-medium ${isBanned ? 'text-red-400' : isWarning ? 'text-yellow-400' : 'text-emerald-400'}`}>{duration}</p>
                       {r.ban_expiry_date && r.ban_expiry_date !== 'Навсегда' && (
                         <p className="text-[11px] text-yellow-400">До: {r.ban_expiry_date}</p>
                       )}
@@ -311,8 +315,8 @@ export default function CheckerPage() {
 
                     <div className="flex flex-wrap items-center gap-1.5 ml-auto">
                       {r.fear_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400 font-bold">Fear</span>}
-                      {r.vac_banned && <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400 font-bold">VAC</span>}
-                      {r.game_bans != null && r.game_bans > 0 && <span className="px-2 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[11px] text-orange-400 font-bold">Game (×{r.game_bans})</span>}
+                      {r.vac_banned && <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[11px] text-yellow-400 font-bold">VAC</span>}
+                      {r.game_bans != null && r.game_bans > 0 && <span className="px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded text-[11px] text-yellow-400 font-bold">Game (×{r.game_bans})</span>}
                       {r.yooma_banned && <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded text-[11px] text-purple-400 font-bold">Yooma</span>}
                     </div>
 

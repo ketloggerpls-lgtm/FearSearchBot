@@ -185,7 +185,7 @@ func (h *EvadersHandler) computeEvaders() ([]Evader, error) {
 
 	// Способ 1: из PostgreSQL vdf_history
 	if h.db != nil {
-		history, err := h.db.GetVDFHistoryDetailed(500)
+		history, err := h.db.GetVDFHistoryDetailed()
 		if err == nil && len(history) > 0 {
 			return h.computeEvadersFromHistory(history, online), nil
 		}
