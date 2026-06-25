@@ -8874,6 +8874,38 @@ def _save_autoban_settings():
 
 _autoban_settings: dict = _load_autoban_settings()
 
+@tree.command(name="yooma_autoban", description="Управление автобаном на Fear за читы на yooma.su")
+@app_commands.describe(mode="Действие")
+@app_commands.choices(mode=[
+    app_commands.Choice(name="Включить", value="on"),
+    app_commands.Choice(name="Выключить", value="off"),
+    app_commands.Choice(name="Статус", value="status"),
+])
+async def cmd_yooma_autoban(interaction: discord.Interaction, mode: str):
+    if not _has_owner_access(interaction.user):
+        await interaction.response.send_message("❌ Нет доступа к этой команде.", ephemeral=True)
+        return
+
+    if mode == "status":
+        enabled = _autoban_settings.get("yooma_cheat_autoban_enabled", True)
+        await interaction.response.send_message(
+            f"{'🟢' if enabled else '🔴'} Автобан за читы на yooma.su: {'включён' if enabled else 'выключён'}.",
+            ephemeral=True,
+        )
+        return
+
+    new_value = mode == "on"
+    _autoban_settings["yooma_cheat_autoban_enabled"] = new_value
+    _save_autoban_settings()
+    _log(
+        f"⚙️ [AUTOBAHN] {interaction.user} ({interaction.user.id}) изменил yooma_autoban: {new_value}",
+        discord=False,
+    )
+    await interaction.response.send_message(
+        f"{'🟢' if new_value else '🔴'} Автобан за читы на yooma.su {'включён' if new_value else 'выключён'}.",
+        ephemeral=True,
+    )
+
 def _load_admins_cache() -> list[dict]:
     if ADMINS_CACHE_FILE.exists():
         try:
