@@ -233,9 +233,9 @@ async def staff_status_refresh_loop():
             except Exception as e:
                 _log(f"⚠️ [STATUS REFRESH] Ошибка обновления {sid}: {e}")
             
-            # Небольшая пауза между админами, чтобы не вешать бота и не злить API
-            await asyncio.sleep(1.0)
-            
+            # Короткая пауза между админами, чтобы не вешать бота и не злить API
+            await asyncio.sleep(0.2)
+
             # Каждые 10 человек пишем прогресс в консоль
             if i % 10 == 0:
                 _log(f"  ⏳ Прогресс: {i}/{len(staff_db)}...")
@@ -348,8 +348,8 @@ async def _purge_bot_messages(channel: discord.TextChannel, limit: int = 200):
             try:
                 await msg.delete()
                 deleted += 1
-                if deleted % 5 == 0:
-                    await asyncio.sleep(0.5)
+                if deleted % 10 == 0:
+                    await asyncio.sleep(0.15)
             except Exception:
                 pass
     except Exception:
@@ -774,7 +774,7 @@ def _safe_url(url: str) -> str:
     except Exception:
         return "<url>"
 
-async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = None, headers: dict = None, timeout_total: int = 15, max_retries: int = 3):
+async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = None, headers: dict = None, timeout_total: int = 8, max_retries: int = 2):
     safe = _safe_url(url)
     timeout = aiohttp.ClientTimeout(total=timeout_total)
     last_status = None
@@ -802,23 +802,23 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
                         if attempt == max_retries - 1:
                             _log(f"⚠️ [HTTP] Ошибка парсинга JSON с {safe}: {je}. Ответ: {text[:100]}...", discord=False)
                         continue
-                
+
                 if r.status == 429:
                     retry_after = r.headers.get("Retry-After")
                     try:
-                        wait_s = float(retry_after) if retry_after else (2.0 ** attempt)
+                        wait_s = float(retry_after) if retry_after else (1.5 ** attempt)
                     except Exception:
-                        wait_s = 2.0 ** attempt
-                    
+                        wait_s = 1.5 ** attempt
+
                     _log(f"⚠️ HTTP 429 {safe}. Waiting {wait_s:.1f}s...")
-                    await asyncio.sleep(min(max(wait_s, 1.0), 30.0))
+                    await asyncio.sleep(min(max(wait_s, 0.5), 10.0))
                     continue
                 # Если 404 или 403 — не повторяем, скорее всего путь неверный или бан
                 if r.status in (403, 404):
                     break
 
                 if r.status >= 500 and attempt < max_retries - 1:
-                    await asyncio.sleep(1.0 * (attempt + 1))
+                    await asyncio.sleep(0.3 * (attempt + 1))
                     continue
 
                 break
@@ -826,7 +826,7 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
         except Exception as e:
             last_err = e
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0 * (attempt + 1))
+                await asyncio.sleep(0.3 * (attempt + 1))
                 continue
             break
 
@@ -835,8 +835,8 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
     # Чтобы не спамить на каждого отдельного игрока (разные steamid в URL)
     throttle_key = f"{safe}:{last_status or 'err'}"
     last = _http_warn_last.get(throttle_key, 0)
-    
-    if now - last >= 300: # Логируем одну и ту же ошибку для домена не чаще раз в 5 минут
+
+    if now - last >= 120: # Логируем одну и ту же ошибку для домена не чаще раз в 2 минуты
         _http_warn_last[throttle_key] = now
         if last_status is not None and last_status != 200:
             if last_status == 404:
@@ -855,20 +855,27 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
 async def _get_profile(session: aiohttp.ClientSession, steam_id: str):
     if steam_id in _profile_cache:
         return _profile_cache[steam_id]
-    
-    # 1. Сначала пробуем получить базовый профиль
-    data = await _fetch_json(session, f"{API_BASE}/profile/{steam_id}")
-    
-    # 2. Дополняем данными из поиска по лидерборду (позиция, ранг, очки)
+
+    # 1. Базовый профиль, лидерборд и скинчanger — параллельно
+    profile_task = _fetch_json(session, f"{API_BASE}/profile/{steam_id}")
+
     lb_data = next((p for p in _cached_leaderboard_data if str(p.get("steamid", "")).strip() == steam_id), None)
-    
+    lb_task = None
     if not lb_data:
-        lb_search = await _fetch_json(session, f"{API_BASE}/leaderboard/search", params={"q": steam_id, "limit": 1})
+        lb_task = _fetch_json(session, f"{API_BASE}/leaderboard/search", params={"q": steam_id, "limit": 1})
+
+    sc_task = _fetch_json(session, f"{API_BASE}/skinchanger/player", params={"steamid": steam_id, "mode": "public"})
+
+    if lb_task:
+        data, lb_search, sc = await asyncio.gather(profile_task, lb_task, sc_task)
         if lb_search and isinstance(lb_search, dict):
             players = lb_search.get("players") or lb_search.get("leaderboard") or []
             if players:
                 lb_data = players[0]
-    
+    else:
+        data, sc = await asyncio.gather(profile_task, sc_task)
+
+    # 2. Дополняем данными из поиска по лидерборду (позиция, ранг, очки)
     if lb_data:
         if not data: data = {}
         data.update({
@@ -879,7 +886,6 @@ async def _get_profile(session: aiohttp.ClientSession, steam_id: str):
         })
 
     # 3. Баланс берём из skinchanger API (в profile API это Fear-очки, а не баланс скинов)
-    sc = await _fetch_json(session, f"{API_BASE}/skinchanger/player", params={"steamid": steam_id, "mode": "public"})
     if sc and isinstance(sc, dict):
         sc_profile = sc.get("profile") or {}
         if sc_profile.get("balance") is not None:
@@ -908,7 +914,7 @@ async def _fetch_external_steam_info(session: aiohttp.ClientSession, steamid: st
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     try:
-        async with session.get(url, headers=headers, timeout=10) as r:
+        async with session.get(url, headers=headers, timeout=5) as r:
             if r.status == 200:
                 html = await r.text()
                 
@@ -1772,18 +1778,26 @@ async def _build_suspicious_embed() -> discord.Embed:
         
         scored_players = []
         # Берем только топ по киллам или просто всех и скорим (ограничим для скорости)
-        for p, srv in all_players[:200]: 
-            profile = await _get_profile(session, p["steam_id"])
-            score, reasons = await _calc_suspicion_score(p, profile)
-            
-            if score >= 40:
-                scored_players.append({
-                    "player": p,
-                    "srv": srv,
-                    "score": score,
-                    "reasons": reasons,
-                    "profile": profile
-                })
+        scan_targets = all_players[:250]
+        sem = asyncio.Semaphore(35)
+
+        async def _score_one(item):
+            p, srv = item
+            async with sem:
+                profile = await _get_profile(session, p["steam_id"])
+                score, reasons = await _calc_suspicion_score(p, profile)
+                if score >= 40:
+                    return {
+                        "player": p,
+                        "srv": srv,
+                        "score": score,
+                        "reasons": reasons,
+                        "profile": profile
+                    }
+                return None
+
+        scored = await asyncio.gather(*[_score_one(item) for item in scan_targets])
+        scored_players = [s for s in scored if s]
         
         # Сортируем по убыванию подозрительности
         scored_players.sort(key=lambda x: x["score"], reverse=True)
@@ -2514,7 +2528,7 @@ class StaffView(discord.ui.View):
                         _update_cache_for_staff(session, entry) for entry in batch
                     ])
                     updated += sum(results)
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.1)
             elapsed = (datetime.now() - start).seconds
             _log(f"🔄 StaffView обновил кэш: {updated}/{len(staff_list)} за {elapsed}с")
 
@@ -2732,7 +2746,7 @@ async def cmd_staff(interaction: discord.Interaction):
                         _update_cache_for_staff(session, entry) for entry in batch
                     ])
                     updated += sum(results)
-                    await asyncio.sleep(0.15)
+                    await asyncio.sleep(0.05)
             elapsed = (datetime.now() - start).seconds
             _log(f"📊 /staff: обновлён кэш {updated}/{len(staff_list)} за {elapsed}с")
 
@@ -4020,7 +4034,7 @@ async def punishments_daily_refresh_loop():
             except Exception as e:
                 _log(f"⚠️ Daily refresh error for {sid}: {e}", discord=False)
             if i % 5 == 0:
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)
 
     # Очистка мусора: удаляем записи от не-стафф (Harron Anti-Cheat и т.д.)
     removed_count = 0
@@ -4384,9 +4398,9 @@ async def cmd_staff_force_update(interaction: discord.Interaction):
                 "steamid": sid,
                 "name": name
             })
-            # Небольшая пауза чтобы не перегружать API
-            await asyncio.sleep(0.5)
-    
+            # Короткая пауза чтобы не перегружать API
+            await asyncio.sleep(0.1)
+
     # После глубокого обновления — принудительно обновляем панель
     await staffboard_panel_loop()
     
@@ -7178,13 +7192,6 @@ async def before_reports():
 _ban_notify_cache: dict = {}
 
 
-YOOMA_CHEAT_CHANNEL_ID = 1506392911997042859
-YOOMA_CHEAT_PING_USER_ID = 1500235583367417866
-
-CHEAT_KEYWORDS = {"чит", "cheats", "1.1"}
-
-FEAR_AUTOBAN_DURATION = 60 * 86400  # 60 дней в секундах
-FEAR_AUTOBAN_SERVER_ID = 2
 PUNISHMENT_ROLE_ID = 1510672400415457432
 
 _OWNER_ACCESS_ROLES = {ROLE_OWNER_ID, ROLE_OWNER_ALT_ID, ROLE_GLADMIN_ID, ROLE_CURATOR_ID}
@@ -7440,11 +7447,6 @@ async def _fear_get_my_punishments(session: aiohttp.ClientSession, punishment_ty
     except Exception:
         return []
 
-def _is_cheat_reason(reason: str) -> bool:
-    """Проверяет, содержит ли причина бана слово из списка читов."""
-    reason_lower = str(reason).lower()
-    return any(kw in reason_lower for kw in CHEAT_KEYWORDS)
-
 async def _check_cs2red_ban(session: aiohttp.ClientSession, steamid: str) -> dict:
     """
     Проверяет баны на cs2red.ru.
@@ -7459,7 +7461,7 @@ async def _check_cs2red_ban(session: aiohttp.ClientSession, steamid: str) -> dic
             "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
             "Connection": "keep-alive"
         }
-        data = await _fetch_json(session, url, headers=headers)
+        data = await _fetch_json(session, url, headers=headers, timeout_total=6, max_retries=2)
         if not data or not data.get("success"):
             return {"found": False, "bans": []}
         bans_raw = data.get("bans", [])
@@ -7567,56 +7569,8 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
             except Exception as e:
                 _log(f"ℹ️ Не удалось отправить бан-уведомление (yooma) в канал {getattr(channel, 'id', '?')}: {type(e).__name__}: {e}", discord=False)
 
-            if not _autoban_settings.get("yooma_cheat_autoban_enabled", True):
-                continue
+            # Автовыдача банов за yooma.su отключена.
 
-            try:
-                if _is_cheat_reason(p.get("reason", "")):
-                    cheat_channel = bot.get_channel(YOOMA_CHEAT_CHANNEL_ID)
-                    if cheat_channel:
-                        await asyncio.wait_for(cheat_channel.send(
-                            content=f"<@{YOOMA_CHEAT_PING_USER_ID}> Найден бан за читы!",
-                            embed=embed,
-                            allowed_mentions=discord.AllowedMentions(users=True)
-                        ), timeout=5.0)
-
-                    # Автобан на Fear Project
-                    expires_ts = p.get("expires_ts", 0)
-                    created_ts = p.get("created_ts", 0)
-                    now_ts = datetime.now(timezone.utc).timestamp()
-
-                    # Проверяем возраст бана: если >60 дней с выдачи — пропускаем
-                    if created_ts > 0:
-                        age_sec = int(now_ts - created_ts)
-                        if age_sec > FEAR_AUTOBAN_DURATION:
-                            _log(f"⚠️ [AUTOBAN] Бан {real_sid} на yooma выдан {age_sec // 86400} дн. назад (>60 дн.), пропускаю")
-                            continue
-
-                    if expires_ts > 0:
-                        remaining_sec = int(expires_ts - now_ts)
-                        remaining_days = remaining_sec // 86400
-                        if remaining_days <= 0:
-                            _log(f"⚠️ [AUTOBAN] Бан {real_sid} на yooma истекает через <1 дн., пропускаю")
-                        else:
-                            ban_duration_days = min(remaining_days, 60)
-                            ban_duration_sec = ban_duration_days * 86400
-                            _log(f"🔨 [AUTOBAN] Пытаюсь забанить {real_sid} на {ban_duration_days} дн. (yooma: {p.get('reason', '?')})", discord=False)
-                            try:
-                                async with aiohttp.ClientSession() as ban_session:
-                                    ok = await _fear_autoban(ban_session, real_sid, "1.4 Ban yooma.su", ban_duration_sec)
-                                    _log(f"🔨 [AUTOBAN] Результат для {real_sid}: {'OK' if ok else 'FAIL'}", discord=False)
-                            except Exception as ban_err:
-                                _log(f"❌ [AUTOBAN] Ошибка автобана {real_sid}: {ban_err}\n{traceback.format_exc()}", discord=False)
-                    else:
-                        _log(f"🔨 [AUTOBAN] Пытаюсь забанить {real_sid} на 60 дн. (перманент на yooma)", discord=False)
-                        try:
-                            async with aiohttp.ClientSession() as ban_session:
-                                ok = await _fear_autoban(ban_session, real_sid, "1.4 Ban yooma.su", FEAR_AUTOBAN_DURATION)
-                                _log(f"🔨 [AUTOBAN] Результат для {real_sid}: {'OK' if ok else 'FAIL'}", discord=False)
-                        except Exception as ban_err:
-                            _log(f"❌ [AUTOBAN] Ошибка автобана {real_sid}: {ban_err}\n{traceback.format_exc()}", discord=False)
-            except Exception as e:
-                _log(f"❌ [AUTOBAN] Ошибка в обработке yooma бана {real_sid}: {e}\n{traceback.format_exc()}", discord=False)
 
     # ── CS2Red баны ──
     if cs2red_data.get("found"):
@@ -7648,9 +7602,9 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
     return new_found
 
 _ban_last_check_ts: dict[str, float] = {}
-BAN_RECHECK_INTERVAL = 30
+BAN_RECHECK_INTERVAL = 10
 
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=5)
 async def ban_check_loop():
     """Проверяет баны ВСЕХ онлайн-игроков каждые 10 сек. Кулдаун на игрока: 10 сек."""
     channel = bot.get_channel(BAN_NOTIFY_CHANNEL_ID)
@@ -7659,7 +7613,7 @@ async def ban_check_loop():
     
     try:
         async with aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=25)
+            connector=aiohttp.TCPConnector(limit=50)
         ) as session:
             servers = await _fetch_json(session, f"{API_BASE}/servers")
             if not servers:
@@ -7686,7 +7640,7 @@ async def ban_check_loop():
 
             _log(f"🔍 [BAN CHECK] Проверяю {len(to_check_ids)} из {len(online)} онлайн", discord=False)
 
-            ban_sem = asyncio.Semaphore(20)
+            ban_sem = asyncio.Semaphore(35)
             async def _check_one(sid):
                 async with ban_sem:
                     await _notify_bans_for_player(sid, online[sid], channel, session)
@@ -7707,7 +7661,7 @@ async def before_ban_check():
 
 _channel_warned: set[int] = set()
 
-@tasks.loop(seconds=30)
+@tasks.loop(seconds=15)
 async def monitor_loop():
     _log("🔄 [MONITOR] Начало цикла мониторинга", discord=False)
     sus_channel   = bot.get_channel(SUSPICIOUS_CHANNEL_ID)
@@ -7800,13 +7754,15 @@ async def monitor_loop():
             _log(f"⚡ [BAN] Новых игроков: {len(new_sids)}, проверяю сразу...", discord=False)
             channel = bot.get_channel(BAN_NOTIFY_CHANNEL_ID)
             if channel:
-                async with aiohttp.ClientSession() as ban_session:
-                    for sid in new_sids:
+                ban_sem = asyncio.Semaphore(25)
+                async def _check_new_one(sid: str):
+                    async with ban_sem:
                         try:
-                            await _notify_bans_for_player(sid, new_player_nicks.get(sid, sid), channel, ban_session)
+                            await _notify_bans_for_player(sid, new_player_nicks.get(sid, sid), channel, session)
                             _ban_last_check_ts[sid] = datetime.now(timezone.utc).timestamp()
                         except Exception as e:
                             _log(f"⚠️ [BAN] Ошибка быстрой проверки {sid}: {e}")
+                await asyncio.gather(*[_check_new_one(sid) for sid in new_sids])
 
         now_ts = datetime.now(timezone.utc).timestamp()
         if now_ts - _last_online_record_ts >= 300:
@@ -8239,8 +8195,8 @@ async def _sync_staff_roles(staff_db: dict):
                             await member.add_roles(role_to_add, reason=f"Синхронизация стаффа ({group})")
                             _log(f"🎭 [ROLES] {member.name} ({sid}): выдана роль {all_staff_roles[target_role_id]}")
                             
-                            # Повторная проверка через 1 сек
-                            await asyncio.sleep(1)
+                            # Повторная проверка через 0.3 сек
+                            await asyncio.sleep(0.3)
                             member = await guild.fetch_member(int(d_id))
                             if role_to_add in member.roles:
                                 _log(f"✅ [ROLES] {member.name} ({sid}): роль подтверждена")
@@ -8901,7 +8857,7 @@ _autoclose_settings: dict = _load_autoclose_settings()
 # Настройки автобанов
 AUTOBAN_SETTINGS_FILE = Path(__file__).parent / "autoban_settings.json"
 _AUTOBAN_DEFAULTS: dict = {
-    "yooma_cheat_autoban_enabled": True,  # автобан на Fear за читы на yooma.su
+    "yooma_cheat_autoban_enabled": False,  # автобан на Fear за читы на yooma.su (отключён)
 }
 
 def _load_autoban_settings() -> dict:
@@ -8918,11 +8874,9 @@ def _save_autoban_settings():
 
 _autoban_settings: dict = _load_autoban_settings()
 
-@tree.command(name="yooma_autoban", description="Управление автобаном на Fear за читы на yooma.su")
+@tree.command(name="yooma_autoban", description="[УСТАРЕВШАЯ] Автовыдача банов за yooma.su отключена")
 @app_commands.describe(mode="Действие")
 @app_commands.choices(mode=[
-    app_commands.Choice(name="Включить", value="on"),
-    app_commands.Choice(name="Выключить", value="off"),
     app_commands.Choice(name="Статус", value="status"),
 ])
 async def cmd_yooma_autoban(interaction: discord.Interaction, mode: str):
@@ -8930,23 +8884,8 @@ async def cmd_yooma_autoban(interaction: discord.Interaction, mode: str):
         await interaction.response.send_message("❌ Нет доступа к этой команде.", ephemeral=True)
         return
 
-    if mode == "status":
-        enabled = _autoban_settings.get("yooma_cheat_autoban_enabled", True)
-        await interaction.response.send_message(
-            f"{'🟢' if enabled else '🔴'} Автобан за читы на yooma.su: {'включён' if enabled else 'выключён'}.",
-            ephemeral=True,
-        )
-        return
-
-    new_value = mode == "on"
-    _autoban_settings["yooma_cheat_autoban_enabled"] = new_value
-    _save_autoban_settings()
-    _log(
-        f"⚙️ [AUTOBAHN] {interaction.user} ({interaction.user.id}) изменил yooma_autoban: {new_value}",
-        discord=False,
-    )
     await interaction.response.send_message(
-        f"{'🟢' if new_value else '🔴'} Автобан за читы на yooma.su {'включён' if new_value else 'выключён'}.",
+        "🔴 Автовыдача банов за yooma.su полностью отключена и удалена.",
         ephemeral=True,
     )
 
@@ -9019,7 +8958,7 @@ async def _refresh_admins_and_notify():
                 has_discord = bool(profile.get("discordNickname") or profile.get("providerUserId"))
                 if not has_discord:
                     no_discord.append(admin)
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.1)
             if i % 50 == 0 and i > 0:
                 _log(f"  📊 Проверено {i}/{len(active_admins)}...")
 
@@ -9075,7 +9014,7 @@ async def _fetch_fear_profile(session: aiohttp.ClientSession, steamid: str, retr
 
 
 async def _fetch_fear_fast(session: aiohttp.ClientSession, steamid: str) -> dict | None:
-    """Быстрый запрос Fear API для VDF-проверок: таймаут 8с, 1 попытка, кэш 5 минут."""
+    """Быстрый запрос Fear API для VDF-проверок: таймаут 5с, 1 попытка, кэш 5 минут."""
     now = datetime.now(timezone.utc).timestamp()
     cached = _fear_fast_cache.get(steamid)
     if cached and now - cached[1] < FEAR_FAST_CACHE_TTL:
@@ -9087,7 +9026,7 @@ async def _fetch_fear_fast(session: aiohttp.ClientSession, steamid: str) -> dict
         "Accept": "application/json",
     }
     try:
-        timeout = aiohttp.ClientTimeout(total=8)
+        timeout = aiohttp.ClientTimeout(total=5)
         async with session.get(url, headers=headers, timeout=timeout) as r:
             if r.status == 200:
                 data = await r.json(content_type=None)
@@ -9236,8 +9175,8 @@ async def _check_yooma_ban(session: aiohttp.ClientSession, steamid: str, nicknam
             "Referer": "https://yooma.su/ru/punishments",
             "Origin": "https://yooma.su"
         }
-        # yooma.su часто висит — используем 7 сек и 1 повтор вместо 15/3
-        data = await _fetch_json(session, url, headers=headers, timeout_total=7, max_retries=2)
+        # yooma.su часто висит — используем 5 сек и 1 повтор вместо 15/3
+        data = await _fetch_json(session, url, headers=headers, timeout_total=5, max_retries=2)
         if not data or not data.get("ok"):
             result = {"found": False, "punishments": []}
             _yooma_cache[steamid] = (result, now)
