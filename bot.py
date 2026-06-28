@@ -8438,10 +8438,15 @@ async def _confirm_registration(discord_id: str, confirmation_code: str, interac
         return "❌ Код не найден или истёк."
 
     expected_user_id = int(confirm["user_id"])
-    stored_discord_id = str(confirm["discord_id"] or "")
+    stored_discord_id = str(confirm["discord_id"] or "").strip()
 
-    # Если discord_id уже записан в подтверждении — проверяем совпадение
-    if stored_discord_id and stored_discord_id != discord_id:
+    # Если discord_id не задан или содержит служебное значение — привязываем текущего пользователя
+    if not stored_discord_id or stored_discord_id.lower() in ("pending", "null"):
+        _db.panel_update_registration_confirmation_by_code(confirmation_code, discord_id=discord_id)
+        stored_discord_id = discord_id
+    # Если discord_id уже записан и не совпадает — отказ
+    elif stored_discord_id != discord_id:
+        _log(f"❌ [Panel] /confirm mismatch: stored={stored_discord_id}, current={discord_id}, code={confirmation_code}", discord=False)
         return "❌ Этот код не для вашего аккаунта."
 
     # Определяем уровень по ролям на серверах
