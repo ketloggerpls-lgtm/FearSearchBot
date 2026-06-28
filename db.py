@@ -1278,6 +1278,24 @@ def panel_update_registration_confirmation(confirm_id: int, status: str, level: 
         return False
 
 
+def panel_update_registration_confirmation_by_code(code: str, discord_id: str | None = None) -> bool:
+    """Привязать discord_id к подтверждению по коду."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE panel_registration_confirmations
+                SET discord_id = COALESCE(%s, discord_id)
+                WHERE confirmation_code = %s AND status = 'pending'
+            """, (discord_id, code))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_update_registration_confirmation_by_code: {e}")
+        return False
+
+
 def panel_update_user_status_and_level(user_id: int, status: str, level: int) -> bool:
     """Обновить статус и уровень пользователя панели."""
     conn = _get_conn()

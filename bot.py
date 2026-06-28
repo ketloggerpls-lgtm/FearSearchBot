@@ -1448,6 +1448,19 @@ async def cmd_help(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@tree.command(name="confirm", description="Подтвердить регистрацию на сайте FearSearch")
+@app_commands.describe(code="Код подтверждения из личного сообщения")
+async def cmd_confirm_registration(interaction: discord.Interaction, code: str):
+    try:
+        await interaction.response.defer(ephemeral=True)
+        discord_id = str(interaction.user.id)
+        result = await _confirm_registration(discord_id, code.strip().upper(), interaction)
+        await interaction.followup.send(result, ephemeral=True)
+    except Exception as e:
+        _log(f"❌ [Panel] Ошибка команды /confirm: {e}", discord=False)
+        await interaction.followup.send("❌ Произошла ошибка при подтверждении.", ephemeral=True)
+
+
 @tree.command(name="say", description="Отправить сообщение от имени бота")
 @app_commands.describe(text="Текст сообщения")
 async def cmd_say(interaction: discord.Interaction, text: str):
@@ -8418,63 +8431,34 @@ async def _initial_sync():
     except Exception as e:
         _log(f"⚠️ Первичная синхронизация не удалась: {e}")
 
-class RegistrationConfirmView(discord.ui.View):
-    """Кнопка подтверждения регистрации в личке Discord."""
-    def __init__(self, confirmation_code: str, timeout: float = 600):
-        super().__init__(timeout=timeout)
-        # custom_id содержит код подтверждения — работает после перезапуска
-        btn = discord.ui.Button(
-            label="Подтвердить регистрацию",
-            style=discord.ButtonStyle.green,
-            custom_id=f"reg_confirm:{confirmation_code}"
-        )
-        btn.callback = self._on_confirm
-        self.add_item(btn)
-        self.confirmation_code = confirmation_code
+async def _confirm_registration(discord_id: str, confirmation_code: str, interaction_or_ctx=None) -> str:
+    """Подтверждает регистрацию по коду. Возвращает текст ответа."""
+    confirm = _db.panel_get_registration_confirmation(confirmation_code)
+    if not confirm:
+        return "❌ Код не найден или истёк."
 
-    async def _on_confirm(self, interaction: discord.Interaction):
-        await _handle_registration_confirm(interaction, self.confirmation_code)
+    expected_user_id = int(confirm["user_id"])
+    stored_discord_id = str(confirm["discord_id"] or "")
 
+    # Если discord_id уже записан в подтверждении — проверяем совпадение
+    if stored_discord_id and stored_discord_id != discord_id:
+        return "❌ Этот код не для вашего аккаунта."
 
-async def _handle_registration_confirm(interaction: discord.Interaction, confirmation_code: str):
-    """Обработка нажатия кнопки подтверждения регистрации."""
-    try:
-        confirm = _db.panel_get_registration_confirmation(confirmation_code)
-        if not confirm:
-            await interaction.response.send_message("❌ Ссылка устарела или уже использована.", ephemeral=True)
-            return
+    # Определяем уровень по ролям на серверах
+    level = await _resolve_level_from_discord_roles(discord_id)
 
-        discord_id = str(confirm["discord_id"])
-        user_id = int(confirm["user_id"])
+    # Активируем пользователя
+    _db.panel_update_registration_confirmation(confirm["id"], "confirmed", level)
+    _db.panel_update_user_discord_id(expected_user_id, discord_id)
+    _db.panel_update_user_status_and_level(expected_user_id, "active", level)
+    _db.panel_log_login_event(expected_user_id, "registration_confirmed", {"level": level, "discord_id": discord_id})
 
-        # Проверяем, что нажал тот же Discord-пользователь
-        if str(interaction.user.id) != discord_id:
-            await interaction.response.send_message("❌ Эта ссылка не для вашего аккаунта.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # Определяем уровень по ролям на серверах
-        level = await _resolve_level_from_discord_roles(discord_id)
-
-        # Активируем пользователя
-        _db.panel_update_registration_confirmation(confirm["id"], "confirmed", level)
-        _db.panel_update_user_status_and_level(user_id, "active", level)
-        _db.panel_update_user_discord_id(user_id, discord_id)
-        _db.panel_log_login_event(user_id, "registration_confirmed", {"level": level, "discord_id": discord_id})
-
-        await interaction.followup.send(
-            f"✅ Регистрация подтверждена. Ваш уровень доступа: **{level}**.\n"
-            f"Теперь можно войти на сайт: https://fearsearch.pl/",
-            ephemeral=True
-        )
-        _log(f"✅ [Panel] Пользователь {user_id} подтвердил регистрацию. Discord={discord_id}, level={level}", discord=False)
-    except Exception as e:
-        _log(f"❌ [Panel] Ошибка подтверждения регистрации: {e}", discord=False)
-        try:
-            await interaction.followup.send("❌ Произошла ошибка при подтверждении.", ephemeral=True)
-        except Exception:
-            pass
+    _log(f"✅ [Panel] Пользователь {expected_user_id} подтвердил регистрацию. Discord={discord_id}, level={level}", discord=False)
+    return (
+        f"✅ Регистрация подтверждена.\n"
+        f"Уровень доступа: **{level}**.\n"
+        f"Теперь можно войти на сайт: https://fearsearch.pl/"
+    )
 
 
 async def _resolve_level_from_discord_roles(discord_id: str) -> int:
@@ -8569,9 +8553,9 @@ async def _resolve_discord_id_by_steam(steam_id: str) -> str | None:
 
 @tasks.loop(seconds=30)
 async def panel_registration_loop():
-    """Обрабатывает заявки на регистрацию из панели."""
+    """Обрабатывает заявки на отправку DM-подтверждения регистрации."""
     try:
-        tasks = _db.panel_get_pending_bot_tasks("resolve_discord_by_steam", limit=10)
+        tasks = _db.panel_get_pending_bot_tasks("send_registration_dm", limit=10)
         for task in tasks:
             try:
                 task_id = int(task["id"])
@@ -8580,8 +8564,10 @@ async def panel_registration_loop():
                     payload = json.loads(payload)
                 user_id = int(payload.get("user_id", 0))
                 steam_id = str(payload.get("steam_id", "")).strip()
-                if not user_id or not steam_id:
-                    _db.panel_update_bot_task(task_id, "failed", {"error": "missing user_id or steam_id"})
+                username = str(payload.get("username", "")).strip()
+                confirmation_code = str(payload.get("confirmation_code", "")).strip()
+                if not user_id or not steam_id or not confirmation_code:
+                    _db.panel_update_bot_task(task_id, "failed", {"error": "missing user_id, steam_id or confirmation_code"})
                     continue
 
                 discord_id = await _resolve_discord_id_by_steam(steam_id)
@@ -8590,31 +8576,26 @@ async def panel_registration_loop():
                     _db.panel_log_login_event(user_id, "registration_failed", {"steam_id": steam_id, "reason": "discord_id_not_found"})
                     continue
 
-                # Создаём код подтверждения
-                confirmation_code = secrets.token_urlsafe(32)
-                expires_at = int(time.time() * 1000) + 30 * 60 * 1000  # 30 минут
-                confirm_id = _db.panel_create_registration_confirmation(user_id, discord_id, confirmation_code, expires_at)
-                if not confirm_id:
-                    _db.panel_update_bot_task(task_id, "failed", {"error": "failed to create confirmation"})
-                    continue
+                # Сохраняем discord_id в подтверждении
+                _db.panel_update_registration_confirmation_by_code(confirmation_code, discord_id=discord_id)
 
-                # Отправляем личное сообщение
+                # Отправляем личное сообщение с кодом
                 try:
                     user = await bot.fetch_user(int(discord_id))
                     if not user:
                         raise Exception("User not found")
-                    view = RegistrationConfirmView(confirmation_code)
                     embed = discord.Embed(
                         title="Подтверждение регистрации FearSearch",
                         description=(
-                            f"На сайте **fearsearch.pl** была создана учётная запись с Steam ID `{steam_id}`.\n\n"
-                            f"Нажмите кнопку ниже, чтобы подтвердить, что это ваш аккаунт."
+                            f"На сайте **fearsearch.pl** была создана учётная запись с логином `{username}` и Steam ID `{steam_id}`.\n\n"
+                            f"**Ваш код подтверждения: `{confirmation_code}`**\n\n"
+                            f"Отправьте боту команду: `/confirm {confirmation_code}`"
                         ),
                         color=discord.Color.blue()
                     )
-                    await user.send(embed=embed, view=view)
-                    _db.panel_update_bot_task(task_id, "completed", {"discord_id": discord_id, "confirmation_id": confirm_id})
-                    _db.panel_log_login_event(user_id, "confirmation_sent", {"discord_id": discord_id, "steam_id": steam_id})
+                    await user.send(embed=embed)
+                    _db.panel_update_bot_task(task_id, "completed", {"discord_id": discord_id})
+                    _db.panel_log_login_event(user_id, "confirmation_sent", {"discord_id": discord_id, "steam_id": steam_id, "code": confirmation_code})
                     _log(f"✉️ [Panel] Отправлено DM-подтверждение пользователю {user_id} (Discord={discord_id})", discord=False)
                 except Exception as e:
                     _db.panel_update_bot_task(task_id, "failed", {"error": f"dm_failed: {e}"})
@@ -9009,18 +8990,6 @@ async def on_tree_error(interaction: discord.Interaction, error):
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return  # игнорируем неизвестные префикс-команды
-
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    """Обрабатываем нажатия кнопок подтверждения регистрации по custom_id."""
-    if interaction.type == discord.InteractionType.component:
-        custom_id = getattr(interaction.data, 'custom_id', None) if hasattr(interaction, 'data') and interaction.data else None
-        if not custom_id and isinstance(interaction.data, dict):
-            custom_id = interaction.data.get('custom_id')
-        if custom_id and custom_id.startswith('reg_confirm:'):
-            code = custom_id.split(':', 1)[1]
-            await _handle_registration_confirm(interaction, code)
-            return
 
 # ── Обработка config.vdf ─────────────────────────────────────────────────────
 VDF_CHANNEL_ID = _env_int("VDF_CHANNEL_ID", 1501060380422701056)
