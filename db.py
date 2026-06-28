@@ -1176,3 +1176,156 @@ def LogService(service: str, level: str, message: str, data: dict | None = None)
     except Exception as e:
         logger.error(f"[DB] Ошибка записи лога: {e}")
         return False
+
+
+# --- Интеграция с панелью (регистрация, сессии, подтверждения) ---
+
+def panel_get_pending_bot_tasks(task_type: str, limit: int = 10) -> list:
+    """Получить ожидающие задачи бота из панели."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, type, payload, status, created_at
+                FROM panel_bot_tasks
+                WHERE type = %s AND status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT %s
+            """, (task_type, limit))
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_get_pending_bot_tasks: {e}")
+        return []
+
+
+def panel_update_bot_task(task_id: int, status: str, result: dict | None = None) -> bool:
+    """Обновить статус задачи бота."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE panel_bot_tasks
+                SET status = %s, result = %s, processed_at = %s
+                WHERE id = %s
+            """, (status, json.dumps(result) if result else None, int(time.time() * 1000), task_id))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_update_bot_task: {e}")
+        return False
+
+
+def panel_create_registration_confirmation(user_id: int, discord_id: str, confirmation_code: str, expires_at: int) -> int | None:
+    """Создать запись о подтверждении регистрации."""
+    conn = _get_conn()
+    if not conn:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO panel_registration_confirmations (user_id, discord_id, confirmation_code, status, expires_at, created_at)
+                VALUES (%s, %s, %s, 'pending', %s, %s)
+                RETURNING id
+            """, (user_id, discord_id, confirmation_code, expires_at, int(time.time() * 1000)))
+            row = cur.fetchone()
+            return row['id'] if row else None
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_create_registration_confirmation: {e}")
+        return None
+
+
+def panel_get_registration_confirmation(code: str) -> dict | None:
+    """Получить подтверждение по коду."""
+    conn = _get_conn()
+    if not conn:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM panel_registration_confirmations
+                WHERE confirmation_code = %s AND status = 'pending' AND expires_at > %s
+                LIMIT 1
+            """, (code, int(time.time() * 1000)))
+            row = cur.fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_get_registration_confirmation: {e}")
+        return None
+
+
+def panel_update_registration_confirmation(confirm_id: int, status: str, level: int | None = None) -> bool:
+    """Обновить статус подтверждения."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    now = int(time.time() * 1000)
+    confirmed_at = now if status == 'confirmed' else None
+    rejected_at = now if status == 'rejected' else None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE panel_registration_confirmations
+                SET status = %s, level = COALESCE(%s, level), confirmed_at = COALESCE(%s, confirmed_at), rejected_at = COALESCE(%s, rejected_at)
+                WHERE id = %s
+            """, (status, level, confirmed_at, rejected_at, confirm_id))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_update_registration_confirmation: {e}")
+        return False
+
+
+def panel_update_user_status_and_level(user_id: int, status: str, level: int) -> bool:
+    """Обновить статус и уровень пользователя панели."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE panel_users
+                SET status = %s, level = %s
+                WHERE id = %s
+            """, (status, level, user_id))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_update_user_status_and_level: {e}")
+        return False
+
+
+def panel_update_user_discord_id(user_id: int, discord_id: str) -> bool:
+    """Обновить discord_id пользователя панели."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE panel_users
+                SET discord_id = %s
+                WHERE id = %s
+            """, (discord_id, user_id))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_update_user_discord_id: {e}")
+        return False
+
+
+def panel_log_login_event(user_id: int, action: str, details: dict | None = None, ip: str | None = None, user_agent: str | None = None) -> bool:
+    """Записать событие входа в панели."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO panel_login_logs (user_id, ip_address, user_agent, action, details, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, ip, user_agent, action, json.dumps(details) if details else None, int(time.time() * 1000)))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка panel_log_login_event: {e}")
+        return False

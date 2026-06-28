@@ -16,6 +16,7 @@ import traceback
 import signal
 import hashlib
 import io
+import secrets
 import db as _db
 
 load_dotenv()
@@ -8417,6 +8418,219 @@ async def _initial_sync():
     except Exception as e:
         _log(f"⚠️ Первичная синхронизация не удалась: {e}")
 
+class RegistrationConfirmView(discord.ui.View):
+    """Кнопка подтверждения регистрации в личке Discord."""
+    def __init__(self, confirmation_code: str, timeout: float = 600):
+        super().__init__(timeout=timeout)
+        # custom_id содержит код подтверждения — работает после перезапуска
+        btn = discord.ui.Button(
+            label="Подтвердить регистрацию",
+            style=discord.ButtonStyle.green,
+            custom_id=f"reg_confirm:{confirmation_code}"
+        )
+        btn.callback = self._on_confirm
+        self.add_item(btn)
+        self.confirmation_code = confirmation_code
+
+    async def _on_confirm(self, interaction: discord.Interaction):
+        await _handle_registration_confirm(interaction, self.confirmation_code)
+
+
+async def _handle_registration_confirm(interaction: discord.Interaction, confirmation_code: str):
+    """Обработка нажатия кнопки подтверждения регистрации."""
+    try:
+        confirm = _db.panel_get_registration_confirmation(confirmation_code)
+        if not confirm:
+            await interaction.response.send_message("❌ Ссылка устарела или уже использована.", ephemeral=True)
+            return
+
+        discord_id = str(confirm["discord_id"])
+        user_id = int(confirm["user_id"])
+
+        # Проверяем, что нажал тот же Discord-пользователь
+        if str(interaction.user.id) != discord_id:
+            await interaction.response.send_message("❌ Эта ссылка не для вашего аккаунта.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Определяем уровень по ролям на серверах
+        level = await _resolve_level_from_discord_roles(discord_id)
+
+        # Активируем пользователя
+        _db.panel_update_registration_confirmation(confirm["id"], "confirmed", level)
+        _db.panel_update_user_status_and_level(user_id, "active", level)
+        _db.panel_update_user_discord_id(user_id, discord_id)
+        _db.panel_log_login_event(user_id, "registration_confirmed", {"level": level, "discord_id": discord_id})
+
+        await interaction.followup.send(
+            f"✅ Регистрация подтверждена. Ваш уровень доступа: **{level}**.\n"
+            f"Теперь можно войти на сайт: https://fearsearch.pl/",
+            ephemeral=True
+        )
+        _log(f"✅ [Panel] Пользователь {user_id} подтвердил регистрацию. Discord={discord_id}, level={level}", discord=False)
+    except Exception as e:
+        _log(f"❌ [Panel] Ошибка подтверждения регистрации: {e}", discord=False)
+        try:
+            await interaction.followup.send("❌ Произошла ошибка при подтверждении.", ephemeral=True)
+        except Exception:
+            pass
+
+
+async def _resolve_level_from_discord_roles(discord_id: str) -> int:
+    """Определяет уровень по ролям пользователя на Discord-серверах."""
+    # Сначала проверяем force level 5
+    force_ids = set(str(x).strip() for x in (os.getenv("DISCORD_FORCE_LEVEL_5_IDS") or "").split(",") if x.strip())
+    if discord_id in force_ids:
+        return 5
+
+    # Проверяем блокирующие роли
+    blocked_ids = set(str(x).strip() for x in (os.getenv("DISCORD_BLOCKED_ROLE_IDS") or "").split(",") if x.strip())
+
+    # Собираем роли со всех серверов, где есть бот
+    user_roles = set()
+    for guild in bot.guilds:
+        try:
+            member = guild.get_member(int(discord_id))
+            if not member:
+                try:
+                    member = await guild.fetch_member(int(discord_id))
+                except Exception:
+                    continue
+            if member:
+                for role in member.roles:
+                    user_roles.add(str(role.id))
+        except Exception:
+            continue
+
+    if user_roles & blocked_ids:
+        return 0
+
+    # Маппинг ролей -> уровень
+    role_levels = {}
+    for key, value in os.environ.items():
+        if key.startswith("DISCORD_ROLE_LEVEL_"):
+            try:
+                lvl = int(key.split("_")[-1])
+                for rid in str(value).split(","):
+                    rid = rid.strip()
+                    if rid:
+                        role_levels[rid] = lvl
+            except Exception:
+                continue
+        elif key == "DISCORD_ROLE_LEVELS":
+            try:
+                data = json.loads(value)
+                for rid, lvl in data.items():
+                    role_levels[str(rid)] = int(lvl)
+            except Exception:
+                continue
+
+    max_level = int(os.getenv("DISCORD_DEFAULT_LEVEL") or "0")
+    for rid in user_roles:
+        if rid in role_levels and role_levels[rid] > max_level:
+            max_level = role_levels[rid]
+    return max_level
+
+
+async def _resolve_discord_id_by_steam(steam_id: str) -> str | None:
+    """Ищет Discord ID по Steam ID через локальные базы админов."""
+    # 1. Сначала в staff_db
+    staff_db = _load_staff_db()
+    for sid, entry in staff_db.items():
+        if str(sid).strip() == str(steam_id).strip():
+            did = str(entry.get("discord_id") or "").strip()
+            if did and did != "—":
+                return did
+
+    # 2. В кэше админов
+    admins = _load_admins_cache()
+    for admin in admins:
+        if str(admin.get("steamid") or "").strip() == str(steam_id).strip():
+            did = str(admin.get("discord_id") or "").strip()
+            if did:
+                return did
+
+    # 3. Если не нашли — обновляем кэш и ищем снова
+    try:
+        sync_result = await _sync_staff_list()
+        if sync_result and not sync_result.get("error"):
+            admins = _load_admins_cache()
+            for admin in admins:
+                if str(admin.get("steamid") or "").strip() == str(steam_id).strip():
+                    did = str(admin.get("discord_id") or "").strip()
+                    if did:
+                        return did
+    except Exception as e:
+        _log(f"⚠️ [Panel] Ошибка обновления админов для поиска Discord ID: {e}", discord=False)
+
+    return None
+
+
+@tasks.loop(seconds=30)
+async def panel_registration_loop():
+    """Обрабатывает заявки на регистрацию из панели."""
+    try:
+        tasks = _db.panel_get_pending_bot_tasks("resolve_discord_by_steam", limit=10)
+        for task in tasks:
+            try:
+                task_id = int(task["id"])
+                payload = task.get("payload") or {}
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                user_id = int(payload.get("user_id", 0))
+                steam_id = str(payload.get("steam_id", "")).strip()
+                if not user_id or not steam_id:
+                    _db.panel_update_bot_task(task_id, "failed", {"error": "missing user_id or steam_id"})
+                    continue
+
+                discord_id = await _resolve_discord_id_by_steam(steam_id)
+                if not discord_id:
+                    _db.panel_update_bot_task(task_id, "failed", {"error": "discord_id not found for steam_id"})
+                    _db.panel_log_login_event(user_id, "registration_failed", {"steam_id": steam_id, "reason": "discord_id_not_found"})
+                    continue
+
+                # Создаём код подтверждения
+                confirmation_code = secrets.token_urlsafe(32)
+                expires_at = int(time.time() * 1000) + 30 * 60 * 1000  # 30 минут
+                confirm_id = _db.panel_create_registration_confirmation(user_id, discord_id, confirmation_code, expires_at)
+                if not confirm_id:
+                    _db.panel_update_bot_task(task_id, "failed", {"error": "failed to create confirmation"})
+                    continue
+
+                # Отправляем личное сообщение
+                try:
+                    user = await bot.fetch_user(int(discord_id))
+                    if not user:
+                        raise Exception("User not found")
+                    view = RegistrationConfirmView(confirmation_code)
+                    embed = discord.Embed(
+                        title="Подтверждение регистрации FearSearch",
+                        description=(
+                            f"На сайте **fearsearch.pl** была создана учётная запись с Steam ID `{steam_id}`.\n\n"
+                            f"Нажмите кнопку ниже, чтобы подтвердить, что это ваш аккаунт."
+                        ),
+                        color=discord.Color.blue()
+                    )
+                    await user.send(embed=embed, view=view)
+                    _db.panel_update_bot_task(task_id, "completed", {"discord_id": discord_id, "confirmation_id": confirm_id})
+                    _db.panel_log_login_event(user_id, "confirmation_sent", {"discord_id": discord_id, "steam_id": steam_id})
+                    _log(f"✉️ [Panel] Отправлено DM-подтверждение пользователю {user_id} (Discord={discord_id})", discord=False)
+                except Exception as e:
+                    _db.panel_update_bot_task(task_id, "failed", {"error": f"dm_failed: {e}"})
+                    _db.panel_log_login_event(user_id, "confirmation_dm_failed", {"discord_id": discord_id, "error": str(e)})
+                    _log(f"⚠️ [Panel] Не удалось отправить DM пользователю {user_id}: {e}", discord=False)
+            except Exception as e:
+                _log(f"❌ [Panel] Ошибка обработки задачи регистрации {task.get('id')}: {e}", discord=False)
+    except Exception as e:
+        _log(f"❌ [Panel] Ошибка panel_registration_loop: {e}", discord=False)
+
+
+@panel_registration_loop.before_loop
+async def before_panel_registration_loop():
+    await bot.wait_until_ready()
+
+
 @bot.event
 async def on_member_join(member: discord.Member):
     """При входе нового участника проверяем его статус на сайте и выдаем роли."""
@@ -8512,6 +8726,7 @@ async def on_ready():
     bot.add_view(TicketControlView())
     bot.add_view(CheckerDMButton())
     bot.add_view(LeaderboardView())
+    bot.add_view(RegistrationConfirmView(""))  # custom_id позволяет обрабатывать через on_interaction
 
     # Запускаем rate-limited отправщик логов
     _start_log_sender()
@@ -8780,6 +8995,10 @@ async def on_ready():
     if not voice_reconnect_loop.is_running():
         voice_reconnect_loop.start()
 
+    # Запускаем обработку заявок на регистрацию в панели
+    if not panel_registration_loop.is_running():
+        panel_registration_loop.start()
+
 @tree.error
 async def on_tree_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.CommandNotFound):
@@ -8789,6 +9008,18 @@ async def on_tree_error(interaction: discord.Interaction, error):
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return  # игнорируем неизвестные префикс-команды
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    """Обрабатываем нажатия кнопок подтверждения регистрации по custom_id."""
+    if interaction.type == discord.InteractionType.component:
+        custom_id = getattr(interaction.data, 'custom_id', None) if hasattr(interaction, 'data') and interaction.data else None
+        if not custom_id and isinstance(interaction.data, dict):
+            custom_id = interaction.data.get('custom_id')
+        if custom_id and custom_id.startswith('reg_confirm:'):
+            code = custom_id.split(':', 1)[1]
+            await _handle_registration_confirm(interaction, code)
+            return
 
 # ── Обработка config.vdf ─────────────────────────────────────────────────────
 VDF_CHANNEL_ID = _env_int("VDF_CHANNEL_ID", 1501060380422701056)
