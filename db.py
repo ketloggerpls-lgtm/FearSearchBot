@@ -461,9 +461,14 @@ def db_get_next_vdf_check_id() -> int:
                 INCREMENT BY 1
                 NO CYCLE
             """)
-            cur.execute("""
-                SELECT setval('vdf_check_id_seq', COALESCE((SELECT MAX(check_id) FROM vdf_history), 0) + 1, false)
-            """)
+            # Если сайт пока не использует последовательность (например, старый код),
+            # а максимальный check_id уже далеко ушёл — подгоняем последовательность.
+            cur.execute("SELECT last_value FROM vdf_check_id_seq")
+            seq_last = cur.fetchone()[0]
+            cur.execute("SELECT COALESCE(MAX(check_id), 0) FROM vdf_history")
+            max_id = cur.fetchone()[0]
+            if max_id >= seq_last:
+                cur.execute("SELECT setval('vdf_check_id_seq', %s, false)", (max_id + 1,))
             cur.execute("SELECT nextval('vdf_check_id_seq')")
             row = cur.fetchone()
             return row[0] if row else 0
