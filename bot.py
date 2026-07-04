@@ -11213,7 +11213,7 @@ async def before_voice_reconnect():
 
 
 # ── Backup (Discord + Google Drive) ──
-BACKUP_CHANNEL_ID = int(os.getenv("BACKUP_CHANNEL_ID", "0") or "0")
+BACKUP_CHANNEL_ID = int(os.getenv("BACKUP_CHANNEL_ID", "1522813725206118460") or "1522813725206118460")
 
 
 @tree.command(name="backup", description="Создать бэкап базы данных и загрузить в Discord")
