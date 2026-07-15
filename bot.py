@@ -90,9 +90,9 @@ API_BASE_OLD           = os.getenv("API_BASE_OLD", "https://api.fearproject.ru")
 
 # ── Global Fear API rate limiter ──
 # Only 2 concurrent requests to Fear API, min 0.5s between requests
-_fear_api_semaphore = asyncio.Semaphore(2)
+_fear_api_semaphore = asyncio.Semaphore(1)
 _fear_api_last_request = 0.0
-_fear_api_min_interval = 0.5
+_fear_api_min_interval = 2.0
 _fear_api_lock = asyncio.Lock()
 
 # Роли, которым запрещен Yooma (но разрешен /mystats)
@@ -7864,7 +7864,7 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
     return new_found
 
 _ban_last_check_ts: dict[str, float] = {}
-BAN_RECHECK_INTERVAL = 10
+BAN_RECHECK_INTERVAL = 30
 
 @tasks.loop(seconds=5)
 async def ban_check_loop():
@@ -7996,26 +7996,26 @@ async def monitor_loop():
 
         _log(f"👮 [MONITOR] Отслеживаемых: {len(tracked_entries)} | Всего онлайн: {len(new_online)}", discord=False)
 
-        # ── POST snapshot в сайт (WebSocket real-time) ──
-        if SITE_API_URL and new_online:
-            try:
-                import urllib.request
-                snapshot = {
-                    "secret": SITE_API_SECRET,
-                    "players": new_online,
-                    "total": len(new_online),
-                    "servers": servers,
-                    "timestamp": int(time.time()),
-                }
-                req = urllib.request.Request(
-                    f"{SITE_API_URL}/api/bot/snapshot",
-                    data=json.dumps(snapshot).encode(),
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                urllib.request.urlopen(req, timeout=5)
-            except Exception as e:
-                _log(f"⚠️ [MONITOR] Snapshot POST error: {e}", discord=False)
+        # ── POST snapshot в сайт (WebSocket real-time) ── отключено (404)
+        # if SITE_API_URL and new_online:
+        #     try:
+        #         import urllib.request
+        #         snapshot = {
+        #             "secret": SITE_API_SECRET,
+        #             "players": new_online,
+        #             "total": len(new_online),
+        #             "servers": servers,
+        #             "timestamp": int(time.time()),
+        #         }
+        #         req = urllib.request.Request(
+        #             f"{SITE_API_URL}/api/bot/snapshot",
+        #             data=json.dumps(snapshot).encode(),
+        #             headers={"Content-Type": "application/json"},
+        #             method="POST",
+        #         )
+        #         urllib.request.urlopen(req, timeout=5)
+        #     except Exception as e:
+        #         _log(f"⚠️ [MONITOR] Snapshot POST error: {e}", discord=False)
 
         # ── Мгновенная проверка банов для новых игроков ──
         new_sids = set(new_online.keys()) - set(_ban_last_check_ts.keys())
@@ -8660,17 +8660,15 @@ async def _initial_sync():
         result = await _sync_staff_list()
         _log(f"✅ Админов: {result['admins_total']} | Стафф: {result['total']} чел. (+{result['new']} новых, удалено {result['removed']})")
 
-        # Discord данные: проверяем всех 1670 админов при первом запуске
+        # Discord данные: НЕ качаем все 1670 админов при старте — только активный стафф
         db = _load_staff_db()
-        all_admins = _load_admins_cache()
         has_discord = any(e.get("discord_id") for e in db.values())
         
         if not has_discord:
-            _log(f"🔄 Первичное обновление Discord данных для всех {len(all_admins)} админов...")
-            d_result = await _sync_discord_data(sync_all=True)
+            _log(f"🔄 Первичное обновление Discord данных только для {len(db)} стаффов (полный sync отложен)...", discord=False)
+            d_result = await _sync_discord_data(sync_all=False)
         else:
-            # Если данные уже есть, просто синхронизируем роли для текущего стаффа (26 чел)
-            _log(f"🔄 Синхронизация ролей для {len(db)} стаффов...")
+            _log(f"🔄 Синхронизация ролей для {len(db)} стаффов...", discord=False)
             await _sync_staff_roles(db)
             
         # Запускаем мониторинг подозрительных игроков
