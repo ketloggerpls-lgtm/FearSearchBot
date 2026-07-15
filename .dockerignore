@@ -1,12 +1,7 @@
-.env
-.env.*
+node_modules
+VibeCodingBdd/node_modules
+VibeCodingBdd/.git
 .git
+.env
+*.pyc
 __pycache__
-stats_cache/
-update_checker*.py
-update_sync.py
-check.py
-node_modules/
-*.corrupt
-*.sql
-*.csv
