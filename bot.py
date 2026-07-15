@@ -796,6 +796,7 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
 
 
 async def _fetch_json_one(session: aiohttp.ClientSession, url: str, params: dict = None, headers: dict = None, timeout_total: int = 8, max_retries: int = 2):
+    global _fear_api_last_request
     safe = _safe_url(url)
     timeout = aiohttp.ClientTimeout(total=timeout_total)
     last_status = None
@@ -812,6 +813,15 @@ async def _fetch_json_one(session: aiohttp.ClientSession, url: str, params: dict
 
     for attempt in range(max_retries):
         try:
+            # Rate limit for Fear API URLs
+            if "fearproject" in url:
+                async with _fear_api_lock:
+                    now = time.monotonic()
+                    wait = _fear_api_min_interval - (now - _fear_api_last_request)
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    _fear_api_last_request = time.monotonic()
+
             async with session.get(url, params=params, headers=actual_headers, timeout=timeout) as r:
                 last_status = r.status
                 if r.status == 200:
@@ -827,12 +837,12 @@ async def _fetch_json_one(session: aiohttp.ClientSession, url: str, params: dict
                 if r.status == 429:
                     retry_after = r.headers.get("Retry-After")
                     try:
-                        wait_s = float(retry_after) if retry_after else (1.5 ** attempt)
+                        wait_s = float(retry_after) if retry_after else min(3.0 ** attempt, 60.0)
                     except Exception:
-                        wait_s = 1.5 ** attempt
+                        wait_s = min(3.0 ** attempt, 60.0)
 
                     _log(f"⚠️ HTTP 429 {safe}. Waiting {wait_s:.1f}s...")
-                    await asyncio.sleep(min(max(wait_s, 0.5), 10.0))
+                    await asyncio.sleep(wait_s)
                     continue
                 # Если 404 или 403 — не повторяем, скорее всего путь неверный или бан
                 if r.status in (403, 404):
@@ -8013,7 +8023,7 @@ async def monitor_loop():
             _log(f"⚡ [BAN] Новых игроков: {len(new_sids)}, проверяю сразу...", discord=False)
             channel = bot.get_channel(BAN_NOTIFY_CHANNEL_ID)
             if channel:
-                ban_sem = asyncio.Semaphore(5)
+                ban_sem = asyncio.Semaphore(2)
                 async def _check_new_one(sid: str):
                     async with ban_sem:
                         try:
@@ -8509,7 +8519,7 @@ async def _sync_discord_data(sync_all: bool = False) -> dict:
     checked = 0
     
     # Используем семафор чтобы не спамить API слишком сильно
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(2)
 
     async def _update_one(admin_entry: dict):
         nonlocal updated, checked
@@ -9534,10 +9544,18 @@ async def _fetch_fear_profile(session: aiohttp.ClientSession, steamid: str, retr
 
 async def _fetch_fear_fast(session: aiohttp.ClientSession, steamid: str) -> dict | None:
     """Быстрый запрос Fear API для VDF-проверок: таймаут 5с, 1 попытка, кэш 5 минут."""
+    global _fear_api_last_request
     now = datetime.now(timezone.utc).timestamp()
     cached = _fear_fast_cache.get(steamid)
     if cached and now - cached[1] < FEAR_FAST_CACHE_TTL:
         return cached[0]
+
+    # Rate limit
+    async with _fear_api_lock:
+        elapsed = time.monotonic() - _fear_api_last_request
+        if elapsed < _fear_api_min_interval:
+            await asyncio.sleep(_fear_api_min_interval - elapsed)
+        _fear_api_last_request = time.monotonic()
 
     url = f"{API_BASE}/profile/{steamid}"
     headers = {
@@ -9553,6 +9571,14 @@ async def _fetch_fear_fast(session: aiohttp.ClientSession, steamid: str) -> dict
                 data = await r.json(content_type=None)
                 _fear_fast_cache[steamid] = (data, now)
                 return data
+            if r.status == 429:
+                retry_after = r.headers.get("Retry-After")
+                try:
+                    wait_s = float(retry_after) if retry_after else 5.0
+                except Exception:
+                    wait_s = 5.0
+                _log(f"⚠️ [FEAR FAST] 429 {steamid}. Waiting {wait_s:.1f}s", discord=False)
+                await asyncio.sleep(wait_s)
     except Exception:
         pass
     return None
@@ -11334,14 +11360,12 @@ async def voice_reconnect_loop():
         if not vc or not isinstance(vc, discord.VoiceChannel):
             return
         guild = vc.guild
-        if guild.voice_client is None or guild.voice_client.channel != vc:
-            if guild.voice_client:
-                try:
-                    await guild.voice_client.disconnect(force=True)
-                except Exception:
-                    pass
-            await vc.connect(self_deaf=True, self_mute=True)
-            _log(f"🔊 [VOICE] Переподключился в #{vc.name}", discord=False)
+        # Если бот уже подключен к любому войс-каналу — не трогаем его
+        if guild.voice_client and guild.voice_client.is_connected():
+            return
+        # Только если бот не в войсе — подключаемся к VOICE_CHANNEL_ID
+        await vc.connect(self_deaf=True, self_mute=True)
+        _log(f"🔊 [VOICE] Переподключился в #{vc.name}", discord=False)
     except Exception as e:
         _log(f"⚠️ [VOICE] Ошибка: {e}", discord=False)
 
