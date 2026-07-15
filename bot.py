@@ -6552,6 +6552,40 @@ async def cmd_unfreeze_admin(interaction: discord.Interaction, admin_id: int):
         await interaction.followup.send(f"❌ Не удалось разморозить админа **#{admin_id}**. Проверь ID.", ephemeral=True)
 
 
+# ── /connectvoice ───────────────────────────────────────────────────────────
+
+@tree.command(name="connectvoice", description="Подключить бота к войс-каналу по ID и оставаться там навсегда")
+@app_commands.describe(voice_id="ID войс-канала")
+async def cmd_connectvoice(interaction: discord.Interaction, voice_id: str):
+    if not _has_owner_access(interaction.user):
+        return await interaction.response.send_message("❌ Только для владельца.", ephemeral=True)
+
+    voice_id = voice_id.strip()
+    if not voice_id.isdigit():
+        return await interaction.response.send_message("❌ Укажи числовой ID войс-канала.", ephemeral=True)
+
+    channel = bot.get_channel(int(voice_id))
+    if not channel:
+        try:
+            channel = await bot.fetch_channel(int(voice_id))
+        except Exception:
+            return await interaction.response.send_message(f"❌ Канал `{voice_id}` не найден.", ephemeral=True)
+
+    if not isinstance(channel, discord.VoiceChannel):
+        return await interaction.response.send_message("❌ Это не войс-канал.", ephemeral=True)
+
+    try:
+        if interaction.guild.voice_client and interaction.guild.voice_client.is_connected():
+            await interaction.guild.voice_client.move_to(channel)
+        else:
+            await channel.connect(self_deaf=True)
+    except Exception as e:
+        return await interaction.response.send_message(f"❌ Не удалось подключиться: {e}", ephemeral=True)
+
+    _log(f"🔊 [CONNECTVOICE] {interaction.user} подключил бота к войсу {channel.name} ({voice_id})", discord=False)
+    await interaction.response.send_message(f"✅ Подключился к **{channel.name}** и останусь там навсегда.")
+
+
 def _build_stats_embed(steamid: str, date_from: datetime | None = None, date_to: datetime | None = None) -> discord.Embed | None:
     data = _load_cache(steamid)
     if not data:
