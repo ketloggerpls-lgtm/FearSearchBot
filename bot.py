@@ -88,6 +88,13 @@ ALERT_ROLE_ID          = _env_int("ALERT_ROLE_ID", 1463269872350920704)
 API_BASE               = os.getenv("API_BASE", "https://fearproject.ru/api").strip() or "https://fearproject.ru/api"
 API_BASE_OLD           = os.getenv("API_BASE_OLD", "https://api.fearproject.ru").strip() or "https://api.fearproject.ru"
 
+# ── Global Fear API rate limiter ──
+# Only 2 concurrent requests to Fear API, min 0.5s between requests
+_fear_api_semaphore = asyncio.Semaphore(2)
+_fear_api_last_request = 0.0
+_fear_api_min_interval = 0.5
+_fear_api_lock = asyncio.Lock()
+
 # Роли, которым запрещен Yooma (но разрешен /mystats)
 YOOMA_RESTRICTED_ROLES = _env_int_list("YOOMA_RESTRICTED_ROLES", [1507939408223928465, 1507939502147113000])
 
@@ -6110,126 +6117,163 @@ def _fear_api_headers() -> dict:
 
 
 async def _fear_api_get(session: aiohttp.ClientSession, path: str, params: dict = None) -> dict | list | None:
+    global _fear_api_last_request
     url = f"{API_BASE}{path}"
-    max_retries = 4
+    max_retries = 3
     for attempt in range(max_retries):
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with session.get(url, params=params, headers=_fear_api_headers(), timeout=timeout) as r:
-                if r.status == 200:
-                    return await r.json(content_type=None)
-                if r.status == 429:
-                    retry_after = r.headers.get("Retry-After")
-                    try:
-                        wait_s = float(retry_after) if retry_after else min(1.5 ** attempt, 30.0)
-                    except Exception:
-                        wait_s = min(1.5 ** attempt, 30.0)
-                    _log(f"⚠️ [FEAR API GET] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_s)
-                    continue
-                body = await r.text()
-                _log(f"⚠️ [FEAR API GET] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
-                return None
+            # Rate limit: wait at least min_interval between requests
+            async with _fear_api_lock:
+                now = time.monotonic()
+                wait = _fear_api_min_interval - (now - _fear_api_last_request)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                _fear_api_last_request = time.monotonic()
+
+            async with _fear_api_semaphore:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with session.get(url, params=params, headers=_fear_api_headers(), timeout=timeout) as r:
+                    if r.status == 200:
+                        return await r.json(content_type=None)
+                    if r.status == 429:
+                        retry_after = r.headers.get("Retry-After")
+                        try:
+                            wait_s = float(retry_after) if retry_after else min(3.0 ** attempt, 60.0)
+                        except Exception:
+                            wait_s = min(3.0 ** attempt, 60.0)
+                        _log(f"⚠️ [FEAR API GET] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_s)
+                        continue
+                    body = await r.text()
+                    _log(f"⚠️ [FEAR API GET] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
+                    return None
         except Exception as e:
             _log(f"❌ [FEAR API GET] {path}: {e}", discord=False)
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0 * (attempt + 1))
+                await asyncio.sleep(2.0 * (attempt + 1))
             else:
                 return None
     return None
 
 
 async def _fear_api_post(session: aiohttp.ClientSession, path: str, payload: dict = None) -> dict | None:
+    global _fear_api_last_request
     url = f"{API_BASE}{path}"
-    max_retries = 4
+    max_retries = 3
     for attempt in range(max_retries):
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with session.post(url, json=payload, headers=_fear_api_headers(), timeout=timeout) as r:
-                body = await r.text()
-                if r.status in (200, 201):
-                    try:
-                        return await r.json(content_type=None)
-                    except Exception:
-                        return {"ok": True, "raw": body[:500]}
-                if r.status == 429:
-                    retry_after = r.headers.get("Retry-After")
-                    try:
-                        wait_s = float(retry_after) if retry_after else min(1.5 ** attempt, 30.0)
-                    except Exception:
-                        wait_s = min(1.5 ** attempt, 30.0)
-                    _log(f"⚠️ [FEAR API POST] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_s)
-                    continue
-                _log(f"⚠️ [FEAR API POST] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
-                return None
+            async with _fear_api_lock:
+                now = time.monotonic()
+                wait = _fear_api_min_interval - (now - _fear_api_last_request)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                _fear_api_last_request = time.monotonic()
+
+            async with _fear_api_semaphore:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with session.post(url, json=payload, headers=_fear_api_headers(), timeout=timeout) as r:
+                    body = await r.text()
+                    if r.status in (200, 201):
+                        try:
+                            return await r.json(content_type=None)
+                        except Exception:
+                            return {"ok": True, "raw": body[:500]}
+                    if r.status == 429:
+                        retry_after = r.headers.get("Retry-After")
+                        try:
+                            wait_s = float(retry_after) if retry_after else min(3.0 ** attempt, 60.0)
+                        except Exception:
+                            wait_s = min(3.0 ** attempt, 60.0)
+                        _log(f"⚠️ [FEAR API POST] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_s)
+                        continue
+                    _log(f"⚠️ [FEAR API POST] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
+                    return None
         except Exception as e:
             _log(f"❌ [FEAR API POST] {path}: {e}", discord=False)
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0 * (attempt + 1))
+                await asyncio.sleep(2.0 * (attempt + 1))
             else:
                 return None
     return None
 
 
 async def _fear_api_put(session: aiohttp.ClientSession, path: str, payload: dict = None) -> dict | None:
+    global _fear_api_last_request
     url = f"{API_BASE}{path}"
-    max_retries = 4
+    max_retries = 3
     for attempt in range(max_retries):
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with session.put(url, json=payload, headers=_fear_api_headers(), timeout=timeout) as r:
-                body = await r.text()
-                if r.status in (200, 201, 204):
-                    try:
-                        return await r.json(content_type=None)
-                    except Exception:
-                        return {"ok": True, "raw": body[:500]}
-                if r.status == 429:
-                    retry_after = r.headers.get("Retry-After")
-                    try:
-                        wait_s = float(retry_after) if retry_after else min(1.5 ** attempt, 30.0)
-                    except Exception:
-                        wait_s = min(1.5 ** attempt, 30.0)
-                    _log(f"⚠️ [FEAR API PUT] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_s)
-                    continue
-                _log(f"⚠️ [FEAR API PUT] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
-                return None
+            async with _fear_api_lock:
+                now = time.monotonic()
+                wait = _fear_api_min_interval - (now - _fear_api_last_request)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                _fear_api_last_request = time.monotonic()
+
+            async with _fear_api_semaphore:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with session.put(url, json=payload, headers=_fear_api_headers(), timeout=timeout) as r:
+                    body = await r.text()
+                    if r.status in (200, 201, 204):
+                        try:
+                            return await r.json(content_type=None)
+                        except Exception:
+                            return {"ok": True, "raw": body[:500]}
+                    if r.status == 429:
+                        retry_after = r.headers.get("Retry-After")
+                        try:
+                            wait_s = float(retry_after) if retry_after else min(3.0 ** attempt, 60.0)
+                        except Exception:
+                            wait_s = min(3.0 ** attempt, 60.0)
+                        _log(f"⚠️ [FEAR API PUT] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_s)
+                        continue
+                    _log(f"⚠️ [FEAR API PUT] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
+                    return None
         except Exception as e:
             _log(f"❌ [FEAR API PUT] {path}: {e}", discord=False)
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0 * (attempt + 1))
+                await asyncio.sleep(2.0 * (attempt + 1))
             else:
                 return None
     return None
 
 
 async def _fear_api_delete(session: aiohttp.ClientSession, path: str) -> bool:
+    global _fear_api_last_request
     url = f"{API_BASE}{path}"
-    max_retries = 4
+    max_retries = 3
     for attempt in range(max_retries):
         try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with session.delete(url, headers=_fear_api_headers(), timeout=timeout) as r:
-                if r.status in (200, 204):
-                    return True
-                if r.status == 429:
-                    retry_after = r.headers.get("Retry-After")
-                    try:
-                        wait_s = float(retry_after) if retry_after else min(1.5 ** attempt, 30.0)
-                    except Exception:
-                        wait_s = min(1.5 ** attempt, 30.0)
-                    _log(f"⚠️ [FEAR API DELETE] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_s)
-                    continue
-                body = await r.text()
-                _log(f"⚠️ [FEAR API DELETE] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
-                return False
+            async with _fear_api_lock:
+                now = time.monotonic()
+                wait = _fear_api_min_interval - (now - _fear_api_last_request)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+                _fear_api_last_request = time.monotonic()
+
+            async with _fear_api_semaphore:
+                timeout = aiohttp.ClientTimeout(total=15)
+                async with session.delete(url, headers=_fear_api_headers(), timeout=timeout) as r:
+                    if r.status in (200, 204):
+                        return True
+                    if r.status == 429:
+                        retry_after = r.headers.get("Retry-After")
+                        try:
+                            wait_s = float(retry_after) if retry_after else min(3.0 ** attempt, 60.0)
+                        except Exception:
+                            wait_s = min(3.0 ** attempt, 60.0)
+                        _log(f"⚠️ [FEAR API DELETE] 429 {path}. Waiting {wait_s:.1f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(wait_s)
+                        continue
+                    body = await r.text()
+                    _log(f"⚠️ [FEAR API DELETE] {path} -> HTTP {r.status}: {body[:200]}", discord=False)
+                    return False
         except Exception as e:
             _log(f"❌ [FEAR API DELETE] {path}: {e}", discord=False)
             if attempt < max_retries - 1:
-                await asyncio.sleep(1.0 * (attempt + 1))
+                await asyncio.sleep(2.0 * (attempt + 1))
             else:
                 return False
     return False
@@ -9181,46 +9225,45 @@ async def on_ready():
     # Первичная синхронизация при старте — запускаем в фоне чтобы не блокировать войс и лупы
     asyncio.create_task(_initial_sync())
 
-    if not track_loop.is_running():
-        track_loop.start()
-    if not ban_check_loop.is_running():
-        ban_check_loop.start()
-    if not staff_db_sync_loop.is_running():
-        staff_db_sync_loop.start()
-    if not discord_sync_loop.is_running():
-        discord_sync_loop.start()
-    if not leaderboard_sync_loop.is_running():
-        leaderboard_sync_loop.start()
-    if not leaderboard_online_update_loop.is_running():
-        leaderboard_online_update_loop.start()
-    if not suspicious_monitor_loop.is_running():
-        suspicious_monitor_loop.start()
-    if not newbies_panel_loop.is_running():
-        newbies_panel_loop.start()
-    if not admin_online_panel_loop.is_running():
-        admin_online_panel_loop.start()
-    if not staffboard_panel_loop.is_running():
-        staffboard_panel_loop.start()
-    if not leaderstaff_panel_loop.is_running():
-        leaderstaff_panel_loop.start()
-    if not punishments_hourly_scan_loop.is_running():
-        punishments_hourly_scan_loop.start()
-    if not punishments_daily_refresh_loop.is_running():
-        punishments_daily_refresh_loop.start()
-    if not staff_punish_scan_loop.is_running():
-        staff_punish_scan_loop.start()
-    if not mute_repeat_check_loop.is_running():
-        mute_repeat_check_loop.start()
-    if not staff_status_refresh_loop.is_running():
-        staff_status_refresh_loop.start()
-    if not role_sync_loop.is_running():
-        role_sync_loop.start()
-    if not drops_loop.is_running():
-        drops_loop.start()
-    if not online_record_loop.is_running():
-        online_record_loop.start()
-    if not vdf_recheck_loop.is_running():
-        vdf_recheck_loop.start()
+    # ── Stagger loop starts to avoid 429 storm on boot ──
+    async def _stagger_start(loop, delay, name=""):
+        await asyncio.sleep(delay)
+        if not loop.is_running():
+            loop.start()
+            _log(f"▶️ Started {name or loop.coro.__name__} after {delay}s", discord=False)
+
+    _api_loops = [
+        (track_loop, 2, "track_loop"),
+        (ban_check_loop, 5, "ban_check_loop"),
+        (leaderboard_sync_loop, 8, "leaderboard_sync_loop"),
+        (leaderboard_online_update_loop, 11, "leaderboard_online_update_loop"),
+        (staff_punish_scan_loop, 14, "staff_punish_scan_loop"),
+        (punishments_hourly_scan_loop, 17, "punishments_hourly_scan_loop"),
+        (punishments_daily_refresh_loop, 20, "punishments_daily_refresh_loop"),
+        (drops_loop, 23, "drops_loop"),
+        (vdf_recheck_loop, 26, "vdf_recheck_loop"),
+        (monitor_loop, 29, "monitor_loop_restart"),
+        (suspicious_monitor_loop, 32, "suspicious_monitor_loop"),
+    ]
+
+    for loop, delay, name in _api_loops:
+        asyncio.create_task(_stagger_start(loop, delay, name))
+
+    # Non-API loops can start immediately
+    for loop, name in [
+        (staff_db_sync_loop, "staff_db_sync_loop"),
+        (discord_sync_loop, "discord_sync_loop"),
+        (newbies_panel_loop, "newbies_panel_loop"),
+        (admin_online_panel_loop, "admin_online_panel_loop"),
+        (staffboard_panel_loop, "staffboard_panel_loop"),
+        (leaderstaff_panel_loop, "leaderstaff_panel_loop"),
+        (mute_repeat_check_loop, "mute_repeat_check_loop"),
+        (staff_status_refresh_loop, "staff_status_refresh_loop"),
+        (role_sync_loop, "role_sync_loop"),
+        (online_record_loop, "online_record_loop"),
+    ]:
+        if not loop.is_running():
+            loop.start()
 
     # ── Автоподключение в войс-канал (микрофон и наушники выключены) ──
     if VOICE_CHANNEL_ID:

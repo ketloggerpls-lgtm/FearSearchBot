@@ -247,6 +247,74 @@ def _init_table():
                 )
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_bot_tasks (
+                    id SERIAL PRIMARY KEY,
+                    type VARCHAR(64) NOT NULL,
+                    payload JSONB,
+                    status VARCHAR(32) DEFAULT 'pending',
+                    result JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    processed_at BIGINT
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_panel_bot_tasks_type_status ON panel_bot_tasks(type, status)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_fear_punishments (
+                    id SERIAL PRIMARY KEY,
+                    steamid TEXT,
+                    nickname TEXT,
+                    punishment_type INTEGER,
+                    reason TEXT,
+                    admin_steamid TEXT,
+                    admin_name TEXT,
+                    duration INTEGER,
+                    created_at BIGINT,
+                    created_at_ts TIMESTAMPTZ DEFAULT NOW(),
+                    raw_json JSONB
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_panel_fear_punishments_steamid ON panel_fear_punishments(steamid)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_staff_tickets (
+                    id SERIAL PRIMARY KEY,
+                    steamid TEXT,
+                    nickname TEXT,
+                    ym TEXT,
+                    status VARCHAR(32) DEFAULT 'open',
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_panel_staff_tickets_ym ON panel_staff_tickets(ym)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_registration_confirmations (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    discord_id TEXT,
+                    confirmation_code TEXT UNIQUE,
+                    status VARCHAR(32) DEFAULT 'pending',
+                    expires_at BIGINT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_login_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    action TEXT,
+                    details JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_panel_login_logs_created_at ON panel_login_logs(created_at)")
+
             logger.info("[DB] Таблицы инициализированы")
     except Exception as e:
         logger.error(f"[DB] Ошибка создания таблиц: {e}")
