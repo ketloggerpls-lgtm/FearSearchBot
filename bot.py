@@ -8602,8 +8602,9 @@ async def _sync_discord_data(sync_all: bool = False) -> dict:
                 _log(f"  📊 Discord sync: {checked}/{total}...", discord=False)
             
             if profile:
-                d_id = str(profile.get("providerUserId") or "")
-                d_name = profile.get("discordNickname") or ""
+                discord_data = profile.get("discord") or {}
+                d_id = str(discord_data.get("id") or profile.get("providerUserId") or "")
+                d_name = discord_data.get("nickname") or profile.get("discordNickname") or ""
                 
                 changed = False
                 # 1. В admins_cache
@@ -9537,7 +9538,8 @@ async def _refresh_admins_and_notify():
                     _db.db_upsert_profile(profile)
                 except Exception as e:
                     _log(f"⚠️ [PG] Ошибка upsert profile {admin.get('steamid')}: {e}", discord=False)
-                has_discord = bool(profile.get("discordNickname") or profile.get("providerUserId"))
+                discord_data = profile.get("discord") or {}
+                has_discord = bool(discord_data.get("nickname") or profile.get("discordNickname") or profile.get("providerUserId"))
                 if not has_discord:
                     no_discord.append(admin)
             await asyncio.sleep(0.1)
@@ -10459,18 +10461,23 @@ async def cmd_mystats(interaction: discord.Interaction):
     db_entry = _get_staff_by_discord(str(interaction.user.id))
 
     if not db_entry:
-        # Fallback: поиск по Discord нику (display name)
+        # Fallback: поиск по Discord нику (display name и username/login)
         display_name = getattr(interaction.user, "global_name", None) or interaction.user.name
         db_entry = _get_staff_by_discord_name(display_name)
+    if not db_entry:
+        # Ещё fallback: по username/login
+        db_entry = _get_staff_by_discord_name(interaction.user.name)
 
     if not db_entry:
         # Ищем в полном списке админов (не только стафф)
         all_admins = _load_admins_cache()
         user_id_str = str(interaction.user.id)
         display_name = (getattr(interaction.user, "global_name", None) or interaction.user.name).lower()
+        login_name = interaction.user.name.lower()
         admin_entry = next((a for a in all_admins
             if str(a.get("discord_id")) == user_id_str
-            or (a.get("discord_nickname") or "").lower() == display_name), None)
+            or (a.get("discord_nickname") or "").lower() == display_name
+            or (a.get("discord_nickname") or "").lower() == login_name), None)
         if admin_entry:
             db_entry = {
                 "steamid": admin_entry.get("steamid"),
@@ -10491,15 +10498,19 @@ async def cmd_mystats(interaction: discord.Interaction):
         if not db_entry:
             display_name = getattr(interaction.user, "global_name", None) or interaction.user.name
             db_entry = _get_staff_by_discord_name(display_name)
+        if not db_entry:
+            db_entry = _get_staff_by_discord_name(interaction.user.name)
 
         # Снова проверяем в полном списке админов после синхронизации
         if not db_entry:
             all_admins = _load_admins_cache()
             user_id_str = str(interaction.user.id)
             display_name = (getattr(interaction.user, "global_name", None) or interaction.user.name).lower()
+            login_name = interaction.user.name.lower()
             admin_entry = next((a for a in all_admins
                 if str(a.get("discord_id")) == user_id_str
-                or (a.get("discord_nickname") or "").lower() == display_name), None)
+                or (a.get("discord_nickname") or "").lower() == display_name
+                or (a.get("discord_nickname") or "").lower() == login_name), None)
             if admin_entry:
                 db_entry = {
                     "steamid": admin_entry.get("steamid"),
