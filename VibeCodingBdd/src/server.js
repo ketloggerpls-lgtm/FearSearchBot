@@ -180,12 +180,14 @@ app.get("/api/staff-stats", async (req, res) => {
       "MLMODER": "Мл. Модератор",
     };
     const EXCLUDED_ROLES = new Set(["admin", "admin+", "ADMIN", "ADMIN+"]);
+    const EXCLUDED_STEAMIDS = new Set(["76561199077199811"]);
 
     const staffMap = {};
     for (const row of stats) {
       const sid = row.admin_steamid;
       const roleKey = row.role_key || "STAFF";
       if (EXCLUDED_ROLES.has(roleKey)) continue;
+      if (EXCLUDED_STEAMIDS.has(sid)) continue;
       if (!staffMap[sid]) {
         staffMap[sid] = {
           steamid: sid,
