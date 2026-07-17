@@ -701,7 +701,7 @@ function getSiteRoleRank(groupName) {
   return STAFF_ROLE_RANK[groupName] ?? 0;
 }
 
-function createSiteUser(username, password, discordName, discordId, role) {
+async function createSiteUser(username, password, discordName, discordId, role) {
   const { hash, salt } = hashPassword(password);
   const result = await pool.query(
     `INSERT INTO site_users (username, password_hash, password_salt, discord_name, discord_id, role)
