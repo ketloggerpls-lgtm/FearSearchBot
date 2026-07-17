@@ -323,4 +323,3 @@ if (logoutBtn) {
     window.location.href = "/login";
   });
 }
-var adminsLoaded = false;
