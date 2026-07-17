@@ -38,6 +38,10 @@ const app = express();
 app.use(express.json());
 app.use(express.static("public"));
 
+app.get("/login", (_req, res) => {
+  res.sendFile(require("path").join(__dirname, "..", "public", "login.html"));
+});
+
 app.use((req, _res, next) => {
   req.cookies = {};
   const cookieHeader = req.headers.cookie;
