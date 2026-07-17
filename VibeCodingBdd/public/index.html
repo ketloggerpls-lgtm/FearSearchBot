@@ -9,131 +9,105 @@
     <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #09090b; }
-        .glass-panel {
-            background: rgba(22, 22, 26, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-        }
-        .grid-bg {
-            background-image: linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
-            background-size: 32px 32px;
-            mask-image: radial-gradient(circle at 0 0, black 40%, transparent 80%);
-            -webkit-mask-image: radial-gradient(circle at 0 0, black 40%, transparent 80%);
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #0a0a0c; }
+        .glass-panel { background: rgba(22, 22, 26, 0.8); border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(12px); }
+        .grid-bg { background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px); background-size: 40px 40px; mask-image: radial-gradient(ellipse at 30% 20%, black 30%, transparent 70%); -webkit-mask-image: radial-gradient(ellipse at 30% 20%, black 30%, transparent 70%); }
         body { scrollbar-width: thin; }
-        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
-        .sort-btn { cursor: pointer; user-select: none; }
-        .sort-btn:hover { color: #fff; }
-        .sort-btn.active { color: #5865F2; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
         .tab-btn { transition: all 0.2s; border-bottom: 2px solid transparent; }
         .tab-btn.active { color: #5865F2; border-bottom-color: #5865F2; }
         .tab-btn:hover { color: #fff; }
-        .online-card { transition: all 0.2s; }
-        .online-card:hover { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .admin-card { transition: all 0.25s; border: 1px solid rgba(255,255,255,0.06); }
+        .admin-card:hover { border-color: rgba(88,101,242,0.3); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .admin-card.online { border-color: rgba(16,185,129,0.2); }
+        .admin-card.online:hover { border-color: rgba(16,185,129,0.4); box-shadow: 0 8px 24px rgba(16,185,129,0.08); }
+        .connect-btn { background: rgba(88,101,242,0.15); color: #818cf8; transition: all 0.2s; }
+        .connect-btn:hover { background: rgba(88,101,242,0.3); color: #a5b4fc; }
+        .faceit-lvl-10 { color: #f97316; }
+        .faceit-lvl-7 { color: #a78bfa; }
+        .faceit-lvl-4 { color: #60a5fa; }
+        .tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1.4; }
+        .fade-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .search-input:focus { box-shadow: 0 0 0 1px rgba(88,101,242,0.4); }
     </style>
 </head>
 <body class="text-white min-h-screen w-full relative overflow-x-hidden selection:bg-[#5865F2] selection:text-white">
     <div class="fixed inset-0 pointer-events-none z-0">
         <div class="absolute inset-0 grid-bg"></div>
-        <div class="absolute -top-[200px] -left-[200px] w-[600px] h-[600px] bg-[#5865F2] rounded-full blur-[120px] opacity-[0.07]"></div>
+        <div class="absolute -top-[300px] left-[10%] w-[500px] h-[500px] bg-[#5865F2] rounded-full blur-[150px] opacity-[0.05]"></div>
+        <div class="absolute top-[40%] right-[5%] w-[300px] h-[300px] bg-[#10b981] rounded-full blur-[120px] opacity-[0.03]"></div>
     </div>
 
-    <div class="relative z-10 max-w-[1600px] mx-auto px-4 py-6">
-        <div class="flex items-center justify-between mb-6">
-            <div>
-                <h1 class="text-2xl font-bold flex items-center gap-2">
-                    <i class="ph ph-shield-check text-[#5865F2]"></i>
-                    Fear Staff Sync
-                </h1>
-            </div>
+    <div class="relative z-10 max-w-[1400px] mx-auto px-4 py-5">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-5">
             <div class="flex items-center gap-3">
-                <a href="/staff-stats" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
+                <div class="w-9 h-9 rounded-lg bg-[#5865F2]/20 flex items-center justify-center">
+                    <i class="ph ph-shield-check text-[#5865F2] text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold leading-tight">Fear Staff Sync</h1>
+                    <p class="text-[11px] text-gray-500" id="lastUpdate"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <a href="/staff-stats" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
                     <i class="ph ph-chart-bar"></i> Статистика
                 </a>
-                <a href="/checker/" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
+                <a href="/checker/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
                     <i class="ph ph-shield-check"></i> Checker
                 </a>
-                <a href="/vdf.html" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
-                    <i class="ph ph-files"></i> VDF History
+                <a href="/vdf.html" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
+                    <i class="ph ph-files"></i> VDF
                 </a>
-                <button id="refreshBtn" class="px-4 py-2 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-sm font-semibold transition-colors flex items-center gap-2">
+                <button id="refreshBtn" class="px-3 py-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-xs font-semibold transition-colors flex items-center gap-1.5">
                     <i class="ph ph-arrows-clockwise"></i> Обновить
                 </button>
-                <button id="logoutBtn" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2 text-gray-400 hover:text-white">
+                <button id="logoutBtn" class="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs text-gray-400 hover:text-white transition-colors">
                     <i class="ph ph-sign-out"></i>
                 </button>
             </div>
         </div>
 
         <!-- Tabs -->
-        <div class="flex items-center gap-6 border-b border-white/10 mb-4">
-            <button class="tab-btn active py-3 text-sm font-semibold flex items-center gap-2" data-tab="online">
-                <i class="ph ph-users text-emerald-400"></i> Online Admins
+        <div class="flex items-center gap-5 border-b border-white/8 mb-4">
+            <button class="tab-btn active py-2.5 text-sm font-semibold flex items-center gap-2" data-tab="online">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Online
                 <span id="onlineCount" class="text-gray-500 font-normal text-xs"></span>
             </button>
-            <button class="tab-btn py-3 text-sm font-semibold text-gray-400 flex items-center gap-2" data-tab="all">
-                <i class="ph ph-list"></i> All Admins
+            <button class="tab-btn py-2.5 text-sm font-semibold text-gray-400 flex items-center gap-2" data-tab="all">
+                <i class="ph ph-users"></i> Все админы
                 <span id="allCount" class="text-gray-500 font-normal text-xs"></span>
             </button>
         </div>
 
-        <!-- Tab: Online Admins -->
+        <!-- Tab: Online -->
         <div id="tab-online" class="tab-content active">
-            <div class="glass-panel rounded-xl p-4 mb-4">
-                <div class="flex items-center justify-between mb-3">
-                    <span id="onlineStatus" class="text-xs text-gray-500"></span>
-                </div>
-                <div id="onlineList" class="flex flex-wrap gap-2">
-                    <span class="text-gray-500 text-sm">Загрузка...</span>
-                </div>
+            <div id="onlineGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div class="col-span-full text-center py-8 text-gray-500 text-sm">Загрузка...</div>
             </div>
         </div>
 
-        <!-- Tab: All Admins -->
+        <!-- Tab: All -->
         <div id="tab-all" class="tab-content">
-            <div class="glass-panel rounded-xl p-4 mb-4">
-                <div class="flex items-center gap-3">
-                    <i class="ph ph-magnifying-glass text-gray-500"></i>
-                    <input type="text" id="searchInput" placeholder="Поиск по имени, SteamID, Discord..."
-                        class="bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-500">
-                    <span id="status" class="text-sm text-gray-500 whitespace-nowrap"></span>
-                </div>
+            <div class="glass-panel rounded-xl px-4 py-2.5 mb-4 flex items-center gap-3">
+                <i class="ph ph-magnifying-glass text-gray-500 text-sm"></i>
+                <input type="text" id="searchInput" placeholder="Поиск по имени, SteamID, Discord..."
+                    class="search-input bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-500 rounded-lg px-2 py-1">
+                <span id="status" class="text-xs text-gray-500 whitespace-nowrap"></span>
             </div>
-
-            <div class="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03]">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-white/5 text-gray-400 sticky top-0">
-                        <tr>
-                            <th class="px-3 py-3"></th>
-                            <th class="px-3 py-3 font-semibold">Имя</th>
-                            <th class="px-3 py-3 font-semibold">SteamID</th>
-                            <th class="px-3 py-3 font-semibold">Группа</th>
-                            <th class="px-3 py-3 font-semibold">Статус</th>
-                            <th class="px-3 py-3 font-semibold">Discord</th>
-                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="rank">Место <span class="sort-arrow" id="arrow-rank"></span></th>
-                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="kills">K/D <span class="sort-arrow" id="arrow-kills"></span></th>
-                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="playtime">Часы <span class="sort-arrow" id="arrow-playtime"></span></th>
-                            <th class="px-3 py-3 font-semibold">Faceit</th>
-                            <th class="px-3 py-3 font-semibold">Бан</th>
-                            <th class="px-3 py-3 font-semibold">Обновлено</th>
-                            <th class="px-3 py-3 font-semibold">Ссылки</th>
-                        </tr>
-                    </thead>
-                    <tbody id="rows"></tbody>
-                </table>
+            <div id="allGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div class="col-span-full text-center py-8 text-gray-500 text-sm">Нажмите "Все админы" для загрузки</div>
             </div>
-
-            <div class="mt-4 text-center">
-                <span id="pagination" class="text-sm text-gray-500"></span>
+            <div class="mt-3 text-center">
+                <span id="pagination" class="text-xs text-gray-500"></span>
             </div>
         </div>
     </div>
 
-    <script src="/app.js?v=2"></script>
+    <script src="/app.js?v=3"></script>
 </body>
 </html>
