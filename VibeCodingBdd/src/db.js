@@ -687,6 +687,7 @@ async function findAdminByDiscordId(discordId) {
 }
 
 const STAFF_ROLE_RANK = {
+  "Владелец": 11, "Куратор": 10,
   "GLADMIN": 10, "Гл. Администратор": 10,
   "STADMIN": 9, "Ст. Администратор": 9, "Ст. Админ": 9,
   "STMODER": 8, "Ст. Модератор": 8, "Ст. Модер": 8,
