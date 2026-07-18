@@ -172,6 +172,46 @@ async function fetchStaffPunishments(steamid, type, page = 1, limit = 100) {
   return fetchJson(path);
 }
 
+const DAVIDONCHIK_BASE = "https://davidonchik.online";
+
+async function fetchStaffPunishmentsFromDavidonchik(steamid, type) {
+  const url = `${DAVIDONCHIK_BASE}/admin/${encodeURIComponent(steamid)}?type=${type}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(url, {
+      headers: { "accept": "application/json", "user-agent": "FearSearchBot/1.0" },
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error(`Davidonchik ${res.status}`);
+    const data = await res.json();
+    if (data.status !== "ok" || !Array.isArray(data.punishments)) {
+      throw new Error("Davidonchik invalid response");
+    }
+    const rows = data.punishments.map(function(r) {
+      return {
+        id: r.id,
+        steamid: r.steamid,
+        name: r.name,
+        admin: r.admin,
+        admin_steamid: r.admin_steamid,
+        admin_avatar: r.admin_avatar || null,
+        avatar: r.avatar || null,
+        reason: r.reason,
+        status: Number(r.status) || 0,
+        duration: Number(r.duration) || 0,
+        created: Number(r.created) || 0,
+        expires: Number(r.expires) || 0,
+        unbanPrice: r.unbanPrice || null,
+        type: r.type || type
+      };
+    });
+    return { punishments: rows, total: data.total || rows.length };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -181,6 +221,7 @@ module.exports = {
   fetchAdmins,
   fetchProfile,
   fetchStaffPunishments,
+  fetchStaffPunishmentsFromDavidonchik,
   fetchJson,
   sleep,
   sleepMs

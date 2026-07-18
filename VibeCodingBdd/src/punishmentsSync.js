@@ -1,5 +1,5 @@
 const logger = require('./logger');
-const { fetchAdmins, fetchStaffPunishments } = require('./fearApi');
+const { fetchAdmins, fetchStaffPunishments, fetchStaffPunishmentsFromDavidonchik } = require('./fearApi');
 const { upsertPunishments } = require('./db');
 
 const STAFF_STATS_STEAM_IDS = (process.env.STAFF_STATS_STEAM_IDS || '')
@@ -30,61 +30,45 @@ function sleep(ms) {
 
 async function syncPunishmentsForStaff(steamid) {
   logger.info('Syncing punishments for staff', { steamid });
-    for (const urlType of [1, 2]) {
+  for (const urlType of [1, 2]) {
+    try {
+      const data = await fetchStaffPunishmentsFromDavidonchik(steamid, urlType);
+      if (data.punishments.length > 0) {
+        await upsertPunishments(urlType, data.punishments);
+        logger.info('Davidonchik sync OK', { steamid, type: urlType, count: data.punishments.length });
+      } else {
+        logger.debug('Davidonchik returned 0 punishments', { steamid, type: urlType });
+      }
+      if (urlType === 1) await sleep(1000);
+      continue;
+    } catch (error) {
+      logger.warn('Davidonchik failed, falling back to Fear API', { steamid, type: urlType, error: error.message });
+    }
+
     let page = 1;
-    let totalRows = 0;
     while (true) {
       try {
         const data = await fetchStaffPunishments(steamid, urlType, page, PAGE_LIMIT);
-        if (!data || !Array.isArray(data.punishments) || data.punishments.length === 0) {
-          break;
-        }
-        const rows = (data.punishments || []).filter(r => String(r.admin_steamid) === String(steamid));
+        if (!data || !Array.isArray(data.punishments) || data.punishments.length === 0) break;
+        const rows = data.punishments.filter(r => String(r.admin_steamid) === String(steamid));
         if (rows.length > 0) {
           await upsertPunishments(urlType, rows);
-          totalRows += rows.length;
-          logger.debug('Upserted punishments page', {
-            steamid,
-            type: urlType,
-            page,
-            count: rows.length,
-          });
-        } else {
-          logger.debug('No admin rows on this page', {
-            steamid,
-            type: urlType,
-            page,
-            totalOnPage: data.punishments.length,
-          });
+          logger.debug('Fear API upserted page', { steamid, type: urlType, page, count: rows.length });
         }
-        if (data.punishments.length < PAGE_LIMIT) {
-          break;
-        }
+        if (data.punishments.length < PAGE_LIMIT) break;
         page++;
         await sleep(REQUEST_DELAY_MS);
       } catch (error) {
-        logger.error('Failed to sync punishments page', {
-          steamid,
-          type: urlType,
-          page,
-          error: error.message,
-        });
+        logger.error('Fear API fallback failed', { steamid, type: urlType, page, error: error.message });
         if (error.message && error.message.includes('429')) {
           const backoff = Math.min(REQUEST_DELAY_MS * 8, 60000);
-          logger.warn('429 hit during sync, backing off', { steamid, backoff });
+          logger.warn('429 hit, backing off', { steamid, backoff });
           await sleep(backoff);
         }
         break;
       }
     }
-    logger.info('Finished syncing punishments type', {
-      steamid,
-      type: urlType,
-      totalRows,
-    });
-    if (urlType === 1 && totalRows > 0) {
-      await sleep(REQUEST_DELAY_MS);
-    }
+    if (urlType === 1) await sleep(REQUEST_DELAY_MS);
   }
 }
 
