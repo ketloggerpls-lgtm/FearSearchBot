@@ -18,6 +18,8 @@ const {
   getPunishmentLogs,
   getPunishmentLogsCount,
   loginSiteUser,
+  logSiteLogin,
+  deleteSiteUser,
   getSiteSession,
   deleteSiteSession,
   createSiteUser,
@@ -242,7 +244,11 @@ app.post("/api/auth/login", async (req, res) => {
     const rlKey = "login:" + ip;
     if (!rateLimit(rlKey, 10, 60000)) return res.status(429).json({ error: "Слишком много попыток. Подождите минуту" });
     const result = await loginSiteUser(username.trim(), password);
-    if (!result) return res.status(401).json({ error: "Неверный логин или пароль" });
+    if (!result) {
+      logSiteLogin(null, username.trim(), ip, req.headers['user-agent'], 'login_failed', 'Invalid credentials');
+      return res.status(401).json({ error: "Неверный логин или пароль" });
+    }
+    logSiteLogin(result.user.id, username.trim(), ip, req.headers['user-agent'], 'login', 'OK');
     res.cookie("session_token", result.token, {
       httpOnly: true,
       secure: true,
@@ -302,7 +308,7 @@ app.get("/api/auth/me", async (req, res) => {
     try {
       var member = await fetchDiscordMember(req.user.discord_id);
       if (member && member.user) {
-        user.discord_avatar = member.user.avatar ? "https://cdn.discordapp.com/guilds/" + DISCORD_GUILD_ID + "/users/" + req.user.discord_id + "/avatars/" + member.user.avatar + ".png?size=64" : null;
+        user.discord_avatar = member.user.avatar ? "https://cdn.discordapp.com/avatars/" + req.user.discord_id + "/" + member.user.avatar + ".png?size=64" : null;
         user.discord_display = member.nick || member.user.global_name || member.user.username;
         var resolved = resolveDiscordRole(member.roles || []);
         user.discord_role = resolved ? resolved.label : null;
@@ -364,15 +370,16 @@ app.get("/api/staff-stats", async (req, res) => {
       "Разработчик": 10, "DEVELOPER": 10,
       "Модератор Discord": 11, "Модератор месяца": 11,
     };
-    const EXCLUDED_ROLE_KEYS = new Set(["admin", "admin+", "ADMIN", "ADMIN+", "UNDEFINED", "Медиа"]);
+    const EXCLUDED_ROLE_KEYS = new Set(["admin", "admin+", "ADMIN", "ADMIN+", "UNDEFINED", "Медиа", "MEDIA", "МЕДИА"]);
     const EXCLUDED_STEAMIDS = new Set(["76561199077199811"]);
 
     const staffMap = {};
     for (const row of stats) {
       const sid = row.admin_steamid;
       const roleKey = row.role_key || "STAFF";
+      const roleKeyUpper = (roleKey || "").toUpperCase();
       if (EXCLUDED_STEAMIDS.has(sid)) continue;
-      if (EXCLUDED_ROLE_KEYS.has(roleKey)) continue;
+      if (EXCLUDED_ROLE_KEYS.has(roleKey) || EXCLUDED_ROLE_KEYS.has(roleKeyUpper)) continue;
       if (!staffMap[sid]) {
         staffMap[sid] = {
           steamid: sid,
@@ -397,6 +404,7 @@ app.get("/api/staff-stats", async (req, res) => {
       }
     }
     const staffList = Object.values(staffMap)
+      .filter(s => (s.bans + s.mutes) > 0)
       .map(s => ({
         ...s,
         total: s.bans + s.mutes,
@@ -708,7 +716,9 @@ app.get("/api/admin/users", requireOwner, async (_req, res) => {
   try {
     const r = await require("./db").pool.query(
       `SELECT u.id, u.username, u.discord_name, u.discord_id, u.role, u.is_active, u.created_at,
-              (SELECT COUNT(*) FROM site_sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions
+              (SELECT COUNT(*) FROM site_sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions,
+              (SELECT l.ip_address FROM panel_login_logs l WHERE l.user_id = u.id ORDER BY l.created_at DESC LIMIT 1) AS last_ip,
+              (SELECT l.created_at FROM panel_login_logs l WHERE l.user_id = u.id ORDER BY l.created_at DESC LIMIT 1) AS last_login
        FROM site_users u ORDER BY u.created_at DESC`
     );
     res.json({ users: r.rows });
@@ -724,6 +734,19 @@ app.get("/api/admin/users/:id/sessions", requireOwner, async (req, res) => {
       [req.params.id]
     );
     res.json({ sessions: r.rows });
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/admin/users/:id/delete", requireOwner, async (req, res) => {
+  try {
+    const uid = Number(req.params.id);
+    if (!uid) return res.status(400).json({ error: "Invalid user id" });
+    if (uid === req.user.user_id) return res.status(400).json({ error: "Нельзя удалить себя" });
+    await deleteSiteUser(uid);
+    logSiteLogin(req.user.user_id, req.user.username, req.ip || req.connection.remoteAddress, req.headers['user-agent'], 'delete_user', 'Deleted user #' + uid);
+    res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: "Internal server error" });
   }
@@ -850,6 +873,8 @@ app.get("/api/servers", async (_req, res) => {
           p.db_fear_created_at = prof.fear_created_at;
           p.db_faceit_level = prof.faceit_level;
           p.db_faceit_elo = prof.faceit_elo;
+          p.db_group_name = prof.group_name;
+          p.db_group_display_name = prof.group_display_name;
         }
       });
     });
@@ -919,12 +944,9 @@ app.post("/api/owner/tech-mode", requireOwner, (req, res) => {
 });
 
 app.post("/api/owner/force-refresh", requireOwner, async (req, res) => {
-  try {
-    await refreshAllData();
-    res.json({ ok: true, message: "Данные обновлены" });
-  } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  if (refreshInProgress) return res.status(409).json({ error: "Refresh already running" });
+  res.json({ ok: true, message: "Обновление запущено" });
+  refreshAllData().catch(error => logger.error("Force refresh failed", { error: error.message }));
 });
 
 app.get("/api/tab-access", async (req, res) => {

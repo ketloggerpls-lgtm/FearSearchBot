@@ -181,20 +181,23 @@ function renderOnlineCard(p) {
 
   var html = '<div class="admin-card online rounded-xl bg-white/[0.03] p-3 flex flex-col gap-2 fade-in">';
   html += '<div class="flex items-start gap-2.5">';
-  html += '<div class="relative shrink-0">';
+  html += '<a href="' + fearUrl + '" target="_blank" class="relative shrink-0 block">';
   if (avatar) {
-    html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
+    html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover cursor-pointer hover:ring-2 hover:ring-[#5865F2]/50 transition-all" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
     html += '<div class="w-10 h-10 rounded-lg bg-white/10 items-center justify-center hidden">' + letterAvatar(name, 40) + '</div>';
   } else {
     html += letterAvatar(name, 40);
   }
   html += '<div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0a0a0c]"></div>';
-  html += '</div>';
+  html += '</a>';
   html += '<div class="flex-1 min-w-0">';
   html += '<div class="flex items-center gap-1.5 flex-wrap">';
-  html += '<span class="text-sm font-semibold text-white truncate max-w-[160px]">' + esc(name) + '</span>';
+  html += '<a href="' + fearUrl + '" target="_blank" class="text-sm font-semibold text-white truncate max-w-[160px] hover:text-[#818cf8] transition-colors">' + esc(name) + '</a>';
   html += teamTag(team);
   html += '</div>';
+  if (p.db_group_display_name || p.db_group_name) {
+    html += '<div class="text-[10px] text-[#818cf8] font-medium mt-0.5">' + esc(p.db_group_display_name || p.db_group_name) + '</div>';
+  }
   html += '<div class="text-[11px] text-gray-500 font-mono mt-0.5">' + esc(steamId) + '</div>';
   html += '</div>';
   html += '<a href="' + connectUrl + '" class="connect-btn shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1"><i class="ph ph-plugs text-xs"></i>Connect</a>';
@@ -228,6 +231,9 @@ function renderOnlineCard(p) {
   return html;
 }
 
+var onlineSortKey = "default";
+var onlinePlayersCache = [];
+
 async function loadOnlineAdmins() {
   try {
     var res = await fetch("/api/servers");
@@ -248,18 +254,50 @@ async function loadOnlineAdmins() {
       return true;
     });
 
+    onlinePlayersCache = unique;
     if (onlineCountEl) onlineCountEl.textContent = "(" + unique.length + ")";
-
-    if (unique.length === 0) {
-      onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Никого нет онлайн</div>';
-      return;
-    }
-
-    var html = unique.map(function(p) { return renderOnlineCard(p); }).join("");
-    onlineGridEl.innerHTML = html;
+    renderOnlinePlayers();
   } catch (error) {
     onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Не удалось загрузить</div>';
   }
+}
+
+function sortOnlinePlayers(players, key) {
+  var arr = players.slice();
+  switch(key) {
+    case "kd":
+      arr.sort(function(a, b) {
+        var kda = (a.db_kills || 0) / ((a.db_deaths || 0) + 1);
+        var kdb = (b.db_kills || 0) / ((b.db_deaths || 0) + 1);
+        return kdb - kda;
+      }); break;
+    case "playtime":
+      arr.sort(function(a, b) { return (b.db_playtime || 0) - (a.db_playtime || 0); }); break;
+    case "fear-date":
+      arr.sort(function(a, b) {
+        var da = a.db_fear_created_at ? new Date(a.db_fear_created_at).getTime() : 0;
+        var db = b.db_fear_created_at ? new Date(b.db_fear_created_at).getTime() : 0;
+        return da - db;
+      }); break;
+    case "name":
+      arr.sort(function(a, b) {
+        var na = (a.db_name || a.nickname || "").toLowerCase();
+        var nb = (b.db_name || b.nickname || "").toLowerCase();
+        return na.localeCompare(nb, "ru");
+      }); break;
+    default:
+      arr.sort(function(a, b) { return (b.db_kills || 0) - (a.db_kills || 0); });
+  }
+  return arr;
+}
+
+function renderOnlinePlayers() {
+  var sorted = sortOnlinePlayers(onlinePlayersCache, onlineSortKey);
+  if (sorted.length === 0) {
+    onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Никого нет онлайн</div>';
+    return;
+  }
+  onlineGridEl.innerHTML = sorted.map(function(p) { return renderOnlineCard(p); }).join("");
 }
 
 // ===================== ALL ADMINS TABLE =====================
@@ -546,7 +584,6 @@ function renderLogRow(r) {
   var typeIcon = fmtType(r.type);
   var statusStr = fmtStatus(r.status);
   var fearUrl = "https://fearproject.ru/profile/" + r.steamid;
-  var adminProfileUrl = r.admin_steamid ? ("https://fearproject.ru/profile/" + r.admin_steamid) : "#";
   var adminName = esc(r.admin || '—');
   var adminLink;
   if (r.admin_steamid) {
@@ -554,18 +591,18 @@ function renderLogRow(r) {
   } else {
     adminLink = '<span class="text-[#5865F2] font-medium shrink-0">' + adminName + '</span>';
   }
-  return '<div class="flex items-center gap-3 px-4 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-xs">'
-    + '<span class="shrink-0 w-[130px] text-gray-500 font-mono">' + fmtTs(r.created) + '</span>'
-    + '<span class="shrink-0 w-[60px]">' + typeIcon + '</span>'
-    + '<div class="flex-1 min-w-0 flex items-center gap-1">'
+  return '<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-xs">'
+    + '<span class="shrink-0 w-[120px] text-gray-500 font-mono text-[11px]">' + fmtTs(r.created) + '</span>'
+    + '<span class="shrink-0 w-[48px]">' + typeIcon + '</span>'
+    + '<div class="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">'
     + adminLink
     + ' <i class="ph ph-arrow-right text-gray-600 shrink-0"></i> '
-    + '<a href="' + fearUrl + '" target="_blank" class="text-white hover:text-[#5865F2] transition-colors shrink-0">' + esc(r.name || r.steamid) + '</a>'
+    + '<a href="' + fearUrl + '" target="_blank" class="text-white hover:text-[#5865F2] transition-colors truncate">' + esc(r.name || r.steamid) + '</a>'
     + '<span class="text-gray-600 font-mono ml-1 shrink-0">(' + esc(r.steamid) + ')</span>'
     + '</div>'
-    + '<span class="shrink-0 w-[180px] text-gray-400 break-all leading-tight" title="' + esc(r.reason) + '">' + esc(r.reason || '—') + '</span>'
-    + '<span class="shrink-0 w-[80px] text-gray-500">' + fmtDur(r.duration) + '</span>'
-    + '<span class="shrink-0 w-[70px] text-right">' + statusStr + '</span>'
+    + '<span class="shrink-0 max-w-[200px] truncate text-gray-400 text-[11px]" title="' + esc(r.reason) + '">' + esc(r.reason || '—') + '</span>'
+    + '<span class="shrink-0 w-[72px] text-gray-500 text-right">' + fmtDur(r.duration) + '</span>'
+    + '<span class="shrink-0 w-[60px] text-right">' + statusStr + '</span>'
     + '</div>';
 }
 
@@ -783,6 +820,15 @@ if (logoutBtn) {
   });
 }
 
+document.querySelectorAll(".online-sort-btn").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".online-sort-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    onlineSortKey = btn.dataset.sort;
+    renderOnlinePlayers();
+  });
+});
+
 setInterval(loadOnlineAdmins, 15000);
 loadOnlineAdmins();
 loadDashboardStats();
@@ -836,6 +882,14 @@ function loadMyStats() {
   });
 }
 
+function deleteSiteUser(userId, username) {
+  if (!confirm("Удалить пользователя " + username + "? Это действие необратимо.")) return;
+  fetch("/api/admin/users/" + userId + "/delete", { method: "POST" }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) { ownerShowResult("Пользователь " + username + " удалён", true); loadAdminPanel(); }
+    else ownerShowResult("Ошибка: " + (d.error || "unknown"), false);
+  }).catch(function() { ownerShowResult("Ошибка удаления", false); });
+}
+
 function loadAdminPanel() {
   var usersEl = document.getElementById("adminUsersList");
   var logsEl = document.getElementById("adminLoginLogs");
@@ -848,12 +902,17 @@ function loadAdminPanel() {
     if (!users.length) { usersEl.innerHTML = '<div class="text-gray-500 text-xs">Нет пользователей</div>'; return; }
     var html = '';
     users.forEach(function(u) {
-      html += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03]">';
+      var lastLoginStr = u.last_login ? fmtDate(u.last_login) : '—';
+      var lastIp = u.last_ip || '—';
+      html += '<div class="flex items-center justify-between py-2.5 px-3 rounded-lg bg-white/[0.03]">';
       html += '<div class="flex-1 min-w-0"><div class="text-sm font-medium text-white truncate">' + esc(u.username) + '</div>';
-      html += '<div class="text-[10px] text-gray-500">' + esc(u.discord_name || '—') + ' · DiscordID: ' + esc(u.discord_id || '—') + '</div></div>';
+      html += '<div class="text-[10px] text-gray-500 mt-0.5">' + esc(u.discord_name || '—') + ' · DiscordID: ' + esc(u.discord_id || '—') + '</div>';
+      html += '<div class="text-[10px] text-gray-600 mt-0.5">IP: ' + esc(lastIp) + ' · Последний вход: ' + lastLoginStr + '</div>';
+      html += '</div>';
       html += '<div class="flex items-center gap-2 shrink-0">';
       html += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-400">' + esc(u.role) + '</span>';
       if (u.active_sessions > 0) html += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">' + u.active_sessions + ' сессия</span>';
+      html += '<button onclick="deleteSiteUser(' + u.id + ', \'' + esc(u.username) + '\')" class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors" title="Удалить">' + '<i class="ph ph-trash"></i>' + '</button>';
       html += '</div></div>';
     });
     usersEl.innerHTML = html;

@@ -151,6 +151,19 @@ async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS panel_login_logs (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES site_users(id) ON DELETE SET NULL,
+      username TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      action TEXT NOT NULL DEFAULT 'login',
+      details TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS vdf_history (
       id SERIAL PRIMARY KEY,
       check_id INTEGER,
@@ -712,19 +725,22 @@ async function getProfilesBySteamids(steamids) {
   if (!steamids || steamids.length === 0) return {};
   const result = await pool.query(`
     SELECT
-      steamid,
-      name,
-      kills,
-      deaths,
-      playtime,
-      rank,
-      avatar_full,
-      (raw_json->>'created_at') AS fear_created_at,
-      ((raw_json->'faceit')->>'level')::int AS faceit_level,
-      (raw_json->'faceit')->>'url' AS faceit_url,
-      ((raw_json->'faceit')->>'elo')::int AS faceit_elo
-    FROM profiles
-    WHERE steamid = ANY($1)
+      p.steamid,
+      p.name,
+      p.kills,
+      p.deaths,
+      p.playtime,
+      p.rank,
+      p.avatar_full,
+      (p.raw_json->>'created_at') AS fear_created_at,
+      ((p.raw_json->'faceit')->>'level')::int AS faceit_level,
+      (p.raw_json->'faceit')->>'url' AS faceit_url,
+      ((p.raw_json->'faceit')->>'elo')::int AS faceit_elo,
+      a.group_name,
+      a.group_display_name
+    FROM profiles p
+    LEFT JOIN admins a ON a.steamid = p.steamid
+    WHERE p.steamid = ANY($1)
   `, [steamids]);
   const map = {};
   for (const row of result.rows) {
@@ -838,6 +854,20 @@ async function deleteSiteSession(token) {
   await pool.query(`DELETE FROM site_sessions WHERE token = $1`, [token]);
 }
 
+async function logSiteLogin(userId, username, ipAddress, userAgent, action, details) {
+  try {
+    await pool.query(
+      `INSERT INTO panel_login_logs (user_id, username, ip_address, user_agent, action, details) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, username, ipAddress || null, userAgent || null, action || 'login', details || null]
+    );
+  } catch (_) {}
+}
+
+async function deleteSiteUser(userId) {
+  await pool.query(`DELETE FROM site_sessions WHERE user_id = $1`, [userId]);
+  await pool.query(`DELETE FROM site_users WHERE id = $1`, [userId]);
+}
+
 async function updateSiteUserRole(userId, role) {
   await pool.query(`UPDATE site_users SET role = $2 WHERE id = $1`, [userId, role]);
 }
@@ -919,6 +949,8 @@ async function getStaffStatsForPeriod(dateFrom, dateTo) {
     LEFT JOIN admins a ON a.steamid = p.admin_steamid
     WHERE p.admin_steamid IS NOT NULL AND p.admin_steamid != ''
     AND p.admin_steamid NOT IN (SELECT steamid FROM hidden_staff)
+    AND LOWER(COALESCE(a.group_name, 'staff')) NOT LIKE 'admin%'
+    AND LOWER(COALESCE(a.group_name, 'staff')) NOT LIKE '%media%'
     ${dateWhere}
     GROUP BY p.admin_steamid, p.admin, a.group_display_name, a.group_name, a.immunity, p.type, p.status
   `, params);
@@ -964,6 +996,8 @@ module.exports = {
   loginSiteUser,
   getSiteSession,
   deleteSiteSession,
+  logSiteLogin,
+  deleteSiteUser,
   updateSiteUserRole,
   getStaffStatsForPeriod,
   findAdminByDiscordId,
