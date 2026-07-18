@@ -169,8 +169,12 @@ function renderOnlineCard(p) {
   var html = '<div class="admin-card online rounded-xl bg-white/[0.03] p-3 flex flex-col gap-2 fade-in">';
   html += '<div class="flex items-start gap-2.5">';
   html += '<div class="relative shrink-0">';
-  html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
-  html += '<div class="w-10 h-10 rounded-lg bg-white/10 items-center justify-center hidden"><i class="ph ph-user text-gray-500"></i></div>';
+  if (avatar) {
+    html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
+    html += '<div class="w-10 h-10 rounded-lg bg-white/10 items-center justify-center hidden">' + letterAvatar(name, 40) + '</div>';
+  } else {
+    html += letterAvatar(name, 40);
+  }
   html += '<div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0a0a0c]"></div>';
   html += '</div>';
   html += '<div class="flex-1 min-w-0">';
@@ -273,8 +277,13 @@ function renderRow(row) {
 
   var tr = document.createElement("tr");
   tr.className = "border-t border-white/5 hover:bg-white/[0.04] transition-colors";
-  tr.innerHTML =
-    '<td class="px-3 py-3"><img src="' + esc(row.avatar_full || "") + '" alt="" class="w-8 h-8 rounded-full" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="w-8 h-8 rounded-full bg-white/10 items-center justify-center hidden"><i class="ph ph-user text-gray-500 text-xs"></i></div></td>'
+  var avatarHtml;
+  if (row.avatar_full) {
+    avatarHtml = '<td class="px-3 py-3"><img src="' + esc(row.avatar_full) + '" alt="" class="w-8 h-8 rounded-full object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="w-8 h-8 rounded-full items-center justify-center hidden">' + letterAvatarRound(row.name, 32) + '</div></td>';
+  } else {
+    avatarHtml = '<td class="px-3 py-3">' + letterAvatarRound(row.name, 32) + '</td>';
+  }
+  tr.innerHTML = avatarHtml
     + '<td class="px-3 py-3 text-white font-medium">' + esc(row.name || "-") + "</td>"
     + '<td class="px-3 py-3 font-mono text-gray-400 text-xs">' + steamid + "</td>"
     + '<td class="px-3 py-3 text-gray-300">' + esc(row.group_display_name || row.group_name || "-") + "</td>"
@@ -340,8 +349,6 @@ var observer = scrollPanel ? new IntersectionObserver(function(entries) {
     if (entry.isIntersecting && !loading) loadPage(false);
   });
 }, { root: scrollPanel, rootMargin: "200px" }) : null;
-  });
-}, { root: scrollPanel, rootMargin: "200px" });
 
 if (searchInput) {
   searchInput.addEventListener("input", function() {
@@ -691,6 +698,17 @@ document.querySelectorAll(".period-btn").forEach(function(btn) {
 
 var viewGroupedBtn = document.getElementById("viewGrouped");
 var viewTopBtn = document.getElementById("viewTop");
+
+// My Stats period controls
+document.querySelectorAll(".my-stats-period-btn").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".my-stats-period-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    currentMyStatsPeriod = btn.dataset.period;
+    loadMyStats();
+  });
+});
+
 if (viewGroupedBtn) {
   viewGroupedBtn.addEventListener("click", function() {
     currentStatsView = "grouped"; this.classList.add("active");
@@ -756,10 +774,14 @@ loadOnlineAdmins();
 loadDashboardStats();
 setInterval(loadDashboardStats, 30000);
 
+var currentMyStatsPeriod = "this-month";
+
 function loadMyStats() {
   var el = document.getElementById("myStatsContent");
   el.innerHTML = '<div class="skeleton h-[80px]"></div>';
-  fetch("/api/my-stats").then(function(r){return r.json()}).then(function(data) {
+  var params = getPeriodParams(currentMyStatsPeriod);
+  var url = "/api/my-stats?from=" + encodeURIComponent(params.from) + "&to=" + encodeURIComponent(params.to);
+  fetch(url).then(function(r){return r.json()}).then(function(data) {
     if (!data.steamid) {
       el.innerHTML = '<div class="glass-panel rounded-xl p-6 text-center"><div class="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-3"><i class="ph ph-user-circle text-3xl text-gray-600"></i></div><div class="text-gray-400 text-sm mb-1">SteamID не найден</div><div class="text-gray-600 text-xs">Ваш Discord аккаунт не привязан к профилю на сервере</div></div>';
       return;
@@ -846,12 +868,25 @@ function loadAdminPanel() {
 function loadOwnerSystem() {
   var el = document.getElementById("ownerSystemInfo");
   if (!el) return;
-  fetch("/api/owner/system").then(function(r){return r.json()}).then(function(d) {
+  el.innerHTML = '<div class="col-span-full text-center text-gray-500 text-xs py-2">Загрузка...</div>';
+  fetch("/api/owner/system").then(function(r) {
+    if (!r.ok) throw new Error("Нет доступа (403)");
+    return r.json();
+  }).then(function(d) {
+    var dbSizeStr = d.dbSize ? (d.dbSize > 1048576 ? (d.dbSize / 1048576).toFixed(1) + " MB" : (d.dbSize / 1024).toFixed(1) + " KB") : "—";
+    var uptimeH = Math.floor(d.uptime / 3600);
+    var uptimeM = Math.floor((d.uptime % 3600) / 60);
+    var uptimeStr = uptimeH + "ч " + uptimeM + "м";
     el.innerHTML = ''
       + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.adminCount + '</div><div class="text-[10px] text-gray-500">Админов</div></div>'
       + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.profilesCount + '</div><div class="text-[10px] text-gray-500">Профилей</div></div>'
       + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.punishmentsCount + '</div><div class="text-[10px] text-gray-500">Наказаний</div></div>'
-      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.memoryMB + 'MB</div><div class="text-[10px] text-gray-500">Память</div></div>';
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.usersCount + '</div><div class="text-[10px] text-gray-500">Пользователей</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-emerald-400">' + d.totalAdminsOnline + '</div><div class="text-[10px] text-gray-500">Онлайн</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.memoryMB + ' MB</div><div class="text-[10px] text-gray-500">Память</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + dbSizeStr + '</div><div class="text-[10px] text-gray-500">БД</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + uptimeStr + '</div><div class="text-[10px] text-gray-500">Аптайм</div></div>';
+    el.innerHTML += '<div class="col-span-full flex flex-wrap gap-4 text-[10px] text-gray-600 mt-1"><span>Node ' + esc(d.nodeVersion || '—') + '</span><span>' + esc(d.siteUrl || '—') + '</span></div>';
     var btn = document.getElementById("techModeBtn");
     if (btn) {
       btn.innerHTML = d.techMode
@@ -860,7 +895,9 @@ function loadOwnerSystem() {
       if (d.techMode) { btn.classList.remove("bg-amber-500/15","border-amber-500/30","text-amber-400"); btn.classList.add("bg-emerald-500/15","border-emerald-500/30","text-emerald-400"); }
       else { btn.classList.remove("bg-emerald-500/15","border-emerald-500/30","text-emerald-400"); btn.classList.add("bg-amber-500/15","border-amber-500/30","text-amber-400"); }
     }
-  }).catch(function(){});
+  }).catch(function(err) {
+    el.innerHTML = '<div class="col-span-full text-center py-3"><div class="text-gray-500 text-xs">Настройки владельца</div><div class="text-red-400 text-[11px] mt-1">Нет доступа или ошибка загрузки</div></div>';
+  });
 }
 
 function ownerShowResult(msg, ok) {
@@ -884,4 +921,112 @@ function ownerToggleTechMode() {
     ownerShowResult("Тех. режим: " + (d.techMode ? "ВКЛ" : "ВЫКЛ"), true);
     loadOwnerSystem();
   }).catch(function(e) { ownerShowResult("Ошибка: " + e.message, false); });
+}
+
+// ===================== HIDE STATS =====================
+function letterAvatar(name, size) {
+  var letter = (name || "?").charAt(0).toUpperCase();
+  var colors = ["#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63","#00bcd4","#ff5722"];
+  var idx = 0;
+  for (var i = 0; i < (name || "").length; i++) idx = (idx * 31 + (name || "").charCodeAt(i)) % colors.length;
+  var bg = colors[idx];
+  var s = size || 40;
+  return '<div style="width:'+s+'px;height:'+s+'px;border-radius:8px;background:'+bg+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:' + Math.round(s * 0.4) + 'px;">' + esc(letter) + '</div>';
+}
+
+function letterAvatarRound(name, size) {
+  var letter = (name || "?").charAt(0).toUpperCase();
+  var colors = ["#e74c3c","#e67e22","#f1c40f","#2ecc71","#1abc9c","#3498db","#9b59b6","#e91e63","#00bcd4","#ff5722"];
+  var idx = 0;
+  for (var i = 0; i < (name || "").length; i++) idx = (idx * 31 + (name || "").charCodeAt(i)) % colors.length;
+  var bg = colors[idx];
+  var s = size || 32;
+  return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+bg+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:' + Math.round(s * 0.4) + 'px;">' + esc(letter) + '</div>';
+}
+
+var hideStatsModal = null;
+var hiddenStaffList = [];
+
+function openHideStatsModal() {
+  if (!hideStatsModal) {
+    hideStatsModal = document.createElement("div");
+    hideStatsModal.id = "hideStatsModal";
+    hideStatsModal.className = "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden";
+    hideStatsModal.innerHTML = '<div class="glass-panel rounded-2xl p-5 w-[420px] max-h-[500px] flex flex-col relative">'
+      + '<button onclick="closeHideStatsModal()" class="absolute top-3 right-3 text-gray-500 hover:text-white"><i class="ph ph-x text-lg"></i></button>'
+      + '<h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i class="ph ph-eye-slash text-[#5865F2]"></i> Скрыть из статистики</h3>'
+      + '<input id="hideStatsSearch" type="text" placeholder="Поиск по имени или SteamID..." class="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#5865F2]/50 mb-3">'
+      + '<div id="hideStatsList" class="flex-1 overflow-y-auto space-y-1"></div>'
+      + '</div>';
+    hideStatsModal.addEventListener("click", function(e) { if (e.target === hideStatsModal) closeHideStatsModal(); });
+    document.body.appendChild(hideStatsModal);
+    document.getElementById("hideStatsSearch").addEventListener("input", function() { renderHideStatsList(this.value); });
+  }
+  hideStatsModal.classList.remove("hidden");
+  fetch("/api/hidden-staff").then(function(r) { return r.json(); }).then(function(d) {
+    hiddenStaffList = d.hidden || [];
+    renderHideStatsList("");
+  }).catch(function() {
+    hiddenStaffList = [];
+    renderHideStatsList("");
+  });
+}
+
+function closeHideStatsModal() {
+  if (hideStatsModal) hideStatsModal.classList.add("hidden");
+}
+
+function renderHideStatsList(query) {
+  var el = document.getElementById("hideStatsList");
+  if (!el) return;
+  var url = "/api/admins?limit=200&sortBy=admin_id&sortDir=DESC";
+  if (query) url += "&search=" + encodeURIComponent(query);
+  fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+    var rows = d.rows || [];
+    if (!rows.length) { el.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">Нет результатов</div>'; return; }
+    var html = '';
+    rows.forEach(function(r) {
+      var isHidden = hiddenStaffList.indexOf(r.steamid) !== -1;
+      var toggleClass = isHidden ? 'bg-red-500/15 border-red-500/30 text-red-400' : 'bg-white/5 border-white/10 text-gray-400';
+      var toggleText = isHidden ? 'Скрыт' : 'Показать';
+      var toggleIcon = isHidden ? 'ph-eye-slash' : 'ph-eye';
+      html += '<div class="flex items-center justify-between py-2 px-3 rounded-lg bg-white/[0.03]">';
+      html += '<div class="flex items-center gap-2.5 min-w-0">';
+      if (r.avatar_full) {
+        html += '<img src="' + esc(r.avatar_full) + '" class="w-7 h-7 rounded-full object-cover">';
+      } else {
+        html += letterAvatarRound(r.name, 28);
+      }
+      html += '<div class="min-w-0"><div class="text-xs font-medium text-white truncate">' + esc(r.name || r.steamid) + '</div>';
+      html += '<div class="text-[10px] text-gray-500 font-mono">' + esc(r.steamid) + '</div></div></div>';
+      html += '<button onclick="toggleHideStaff(\'' + esc(r.steamid) + '\', ' + !isHidden + ')" class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-colors ' + toggleClass + '">';
+      html += '<i class="ph ' + toggleIcon + ' mr-1"></i>' + toggleText + '</button></div>';
+    });
+    el.innerHTML = html;
+  }).catch(function() {
+    el.innerHTML = '<div class="text-center text-red-400 text-xs py-4">Ошибка загрузки</div>';
+  });
+}
+
+function toggleHideStaff(steamid, shouldHide) {
+  if (shouldHide) {
+    fetch("/api/hidden-staff", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ steamid: steamid }) })
+      .then(function(r) { return r.json(); }).then(function() {
+        hiddenStaffList.push(steamid);
+        var q = document.getElementById("hideStatsSearch");
+        renderHideStatsList(q ? q.value : "");
+      }).catch(function() {});
+  } else {
+    fetch("/api/hidden-staff/" + encodeURIComponent(steamid), { method: "DELETE" })
+      .then(function(r) { return r.json(); }).then(function() {
+        hiddenStaffList = hiddenStaffList.filter(function(s) { return s !== steamid; });
+        var q = document.getElementById("hideStatsSearch");
+        renderHideStatsList(q ? q.value : "");
+      }).catch(function() {});
+  }
+}
+
+var hideStatsBtn = document.getElementById("hideStatsBtn");
+if (hideStatsBtn) {
+  hideStatsBtn.addEventListener("click", function() { openHideStatsModal(); });
 }

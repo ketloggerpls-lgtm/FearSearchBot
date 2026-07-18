@@ -265,7 +265,7 @@ app.get("/api/auth/me", async (req, res) => {
         user.discord_avatar = member.user.avatar ? "https://cdn.discordapp.com/guilds/" + DISCORD_GUILD_ID + "/users/" + req.user.discord_id + "/avatars/" + member.user.avatar + ".png?size=64" : null;
         user.discord_display = member.nick || member.user.global_name || member.user.username;
         var resolved = resolveDiscordRole(member.roles || []);
-        user.discord_role = resolved ? (DISCORD_ROLE_LABELS[resolved.roleId] || "Стафф") : null;
+        user.discord_role = resolved ? resolved.label : null;
       }
     } catch (_) {}
   }
@@ -589,7 +589,7 @@ async function requireOwner(req, res, next) {
     const member = await fetchDiscordMember(req.user.discord_id);
     if (member) {
       const resolved = resolveDiscordRole(member.roles || []);
-      if (resolved && (DISCORD_ROLE_LABELS[resolved.roleId] === "Владелец" || DISCORD_ROLE_LABELS[resolved.roleId] === "Куратор")) {
+      if (resolved && (resolved.label === "Владелец" || resolved.label === "Куратор")) {
         return next();
       }
     }
@@ -712,13 +712,26 @@ app.get("/api/my-stats", async (req, res) => {
     }
     if (!steamid) return res.json({ steamid: null, bans: 0, mutes: 0, rows: [] });
     const stats = await getStaffPunishments(steamid, 0, 200);
+    let filtered = stats || [];
+    if (req.query.from && req.query.to) {
+      const dateFrom = new Date(req.query.from);
+      const dateTo = new Date(req.query.to);
+      if (!isNaN(dateFrom.getTime()) && !isNaN(dateTo.getTime())) {
+        filtered = filtered.filter(r => {
+          if (!r.created) return true;
+          const ts = r.created < 1e12 ? r.created * 1000 : r.created;
+          const d = new Date(ts);
+          return d >= dateFrom && d <= dateTo;
+        });
+      }
+    }
     let bans = 0, mutes = 0;
-    (stats || []).forEach(r => {
+    filtered.forEach(r => {
       if (r.status === 2) return;
       if (r.type === 1) bans++;
       else if (r.type === 2) mutes++;
     });
-    res.json({ steamid, bans, mutes, total: bans + mutes, rows: stats || [] });
+    res.json({ steamid, bans, mutes, total: bans + mutes, rows: filtered });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -869,10 +882,27 @@ app.post("/api/owner/force-refresh", requireOwner, async (req, res) => {
 
 app.get("/api/owner/system", requireOwner, async (req, res) => {
   try {
-    const adminCount = (await pool.query("SELECT COUNT(*) FROM admins")).rows[0].count;
-    const profilesCount = (await pool.query("SELECT COUNT(*) FROM profiles")).rows[0].count;
-    const punishmentsCount = (await pool.query("SELECT COUNT(*) FROM punishments")).rows[0].count;
-    const usersCount = (await pool.query("SELECT COUNT(*) FROM site_users")).rows[0].count;
+    const dbPool = require("./db").pool;
+    const adminCount = (await dbPool.query("SELECT COUNT(*) FROM admins")).rows[0].count;
+    const profilesCount = (await dbPool.query("SELECT COUNT(*) FROM profiles")).rows[0].count;
+    const punishmentsCount = (await dbPool.query("SELECT COUNT(*) FROM punishments")).rows[0].count;
+    const usersCount = (await dbPool.query("SELECT COUNT(*) FROM site_users")).rows[0].count;
+    let dbSize = 0;
+    try {
+      const sizeResult = await dbPool.query("SELECT pg_database_size(current_database()) AS size");
+      dbSize = Number(sizeResult.rows[0].size);
+    } catch (_) {}
+    let totalAdminsOnline = 0;
+    try {
+      const data = await fetchJson("/servers/");
+      const servers = Array.isArray(data) ? data : (data.servers || []);
+      for (const s of servers) {
+        const players = (s.live_data && s.live_data.players) || [];
+        for (const p of players) {
+          if (p.is_admin) totalAdminsOnline++;
+        }
+      }
+    } catch (_) {}
     res.json({
       adminCount: Number(adminCount),
       profilesCount: Number(profilesCount),
@@ -880,6 +910,10 @@ app.get("/api/owner/system", requireOwner, async (req, res) => {
       usersCount: Number(usersCount),
       uptime: Math.floor(process.uptime()),
       memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      dbSize,
+      totalAdminsOnline,
+      siteUrl: process.env.SITE_URL || req.protocol + "://" + req.get("host"),
+      nodeVersion: process.version,
       techMode
     });
   } catch (error) {

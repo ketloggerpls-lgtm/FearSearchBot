@@ -50,6 +50,10 @@
         .period-btn.active { background: rgba(88,101,242,0.2); color: #818cf8; border-color: rgba(88,101,242,0.4); }
         .period-btn:not(.active) { color: #9ca3af; }
         .period-btn:hover:not(.active) { color: #e5e7eb; background: rgba(255,255,255,0.05); }
+        .my-stats-period-btn { transition: all 0.15s; }
+        .my-stats-period-btn.active { background: rgba(88,101,242,0.2); color: #818cf8; border-color: rgba(88,101,242,0.4); }
+        .my-stats-period-btn:not(.active) { color: #9ca3af; }
+        .my-stats-period-btn:hover:not(.active) { color: #e5e7eb; background: rgba(255,255,255,0.05); }
 
         /* Scroll & Skeleton */
         .scroll-panel { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
@@ -288,6 +292,15 @@
 
             <!-- Tab: My Stats -->
             <div id="tab-mystats" class="tab-content">
+                <div id="myStatsToolbar" class="mb-3 shrink-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <button class="my-stats-period-btn active px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="this-month">Этот месяц</button>
+                        <button class="my-stats-period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="last-month">Прошлый месяц</button>
+                        <button class="my-stats-period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="this-week">Эта неделя</button>
+                        <button class="my-stats-period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="last-week">Прошлая неделя</button>
+                        <button class="my-stats-period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="all">Все время</button>
+                    </div>
+                </div>
                 <div class="scroll-panel">
                     <div id="myStatsContent" class="p-4"></div>
                 </div>
