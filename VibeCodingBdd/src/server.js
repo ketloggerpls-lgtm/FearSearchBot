@@ -256,17 +256,17 @@ app.get("/api/staff-stats", async (req, res) => {
     const stats = await getStaffStatsForPeriod(dateFrom, dateTo);
 
     const ROLE_ORDER = {
-      "Владелец": 1, "OWNER": 1,
-      "Куратор": 2, "CURATOR": 2,
-      "Разработчик": 3, "DEVELOPER": 3,
-      "Гл. Администратор": 4, "GLADMIN": 4,
-      "Ст. Администратор": 5, "STADMIN": 5, "Ст. Админ": 5,
-      "Спец. Администратор": 6, "SPECIAL": 6,
-      "Ст. Модератор": 7, "STMODER": 7,
-      "Модератор": 8, "MODER": 8,
-      "Мл. Модератор": 9, "MLMODER": 9,
-      "Модератор Discord": 10, "Модератор месяца": 10,
-      "Стафф": 11, "STAFF": 11,
+      "Стафф": 1, "STAFF": 1,
+      "Гл. Администратор": 2, "GLADMIN": 2,
+      "Ст. Администратор": 3, "STADMIN": 3, "Ст. Админ": 3,
+      "Спец. Администратор": 4, "SPECIAL": 4,
+      "Ст. Модератор": 5, "STMODER": 5,
+      "Модератор": 6, "MODER": 6,
+      "Мл. Модератор": 7, "MLMODER": 7,
+      "Владелец": 8, "OWNER": 8,
+      "Куратор": 9, "CURATOR": 9,
+      "Разработчик": 10, "DEVELOPER": 10,
+      "Модератор Discord": 11, "Модератор месяца": 11,
     };
     const EXCLUDED_ROLE_KEYS = new Set(["admin", "admin+", "ADMIN", "ADMIN+", "UNDEFINED"]);
     const EXCLUDED_STEAMIDS = new Set(["76561199077199811"]);

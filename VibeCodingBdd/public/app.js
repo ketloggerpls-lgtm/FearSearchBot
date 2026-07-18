@@ -24,8 +24,8 @@ function esc(s) { return String(s||"").replace(/[&<>"']/g, function(c) { return 
 function fmtHours(seconds) {
   if (seconds == null || seconds === 0) return "-";
   var h = Number(seconds) / 3600;
-  if (h >= 1) return h.toFixed(1) + "\u0447";
-  return Math.round(Number(seconds) / 60) + "\u043c";
+  if (h >= 1) return h.toFixed(1) + "ч";
+  return Math.round(Number(seconds) / 60) + "м";
 }
 
 function toMs(v) {
@@ -45,16 +45,16 @@ function fmtAge(created_at) {
     if (isNaN(d.getTime())) return null;
     var now = new Date();
     var diff = now - d;
-    if (diff < 0) return "\u0442\u043e\u043b\u044c\u043a\u043e \u0447\u0442\u043e";
+    if (diff < 0) return "только что";
     var mins = Math.floor(diff / 60000);
-    if (mins < 1) return "\u0442\u043e\u043b\u044c\u043a\u043e \u0447\u0442\u043e";
-    if (mins < 60) return mins + " \u043c. \u043d\u0430\u0437\u0430\u0434";
+    if (mins < 1) return "только что";
+    if (mins < 60) return mins + " м. назад";
     var hours = Math.floor(mins / 60);
-    if (hours < 24) return hours + " \u0447. \u043d\u0430\u0437\u0430\u0434";
+    if (hours < 24) return hours + " ч. назад";
     var days = Math.floor(hours / 24);
-    if (days < 30) return days + " \u0434. \u043d\u0430\u0437\u0430\u0434";
-    if (days < 365) return Math.floor(days / 30) + " \u043c. \u043d\u0430\u0437\u0430\u0434";
-    return Math.floor(days / 365) + " \u0433. " + Math.floor((days % 365) / 30) + " \u043c.";
+    if (days < 30) return days + " д. назад";
+    if (days < 365) return Math.floor(days / 30) + " м. назад";
+    return Math.floor(days / 365) + " г. " + Math.floor((days % 365) / 30) + " м.";
   } catch(e) { return null; }
 }
 
@@ -82,19 +82,19 @@ function faceitBadge(level, elo) {
 
 function roleColor(groupName) {
   var map = {
-    "GLADMIN": "#f95dff", "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#f95dff",
-    "STADMIN": "#22c7aa", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#22c7aa", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d": "#22c7aa",
-    "STMODER": "#8c56f0", "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#8c56f0",
-    "MODER": "#e75288", "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#e75288",
-    "MLMODER": "#e2bb6d", "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#e2bb6d",
-    "STAFF": "#eab308", "\u0421\u0442\u0430\u0444\u0444": "#eab308",
-    "admin": "#6b7280", "\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#6b7280",
-    "admin+": "#9ca3af", "\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440 +": "#9ca3af",
-    "\u0412\u043b\u0430\u0434\u0435\u043b\u0435\u0446": "#ff3c3c", "\u041a\u0443\u0440\u0430\u0442\u043e\u0440": "#ff8c00",
-    "\u0420\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a": "#3a84c8",
-    "\u0421\u043f\u0435\u0446. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#d39ae1",
-    "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440 Discord": "#bd458c",
-    "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440 \u043c\u0435\u0441\u044f\u0446\u0430": "#da5f23"
+    "GLADMIN": "#f95dff", "Гл. Администратор": "#f95dff",
+    "STADMIN": "#22c7aa", "Ст. Администратор": "#22c7aa", "Ст. Админ": "#22c7aa",
+    "STMODER": "#8c56f0", "Ст. Модератор": "#8c56f0",
+    "MODER": "#e75288", "Модератор": "#e75288",
+    "MLMODER": "#e2bb6d", "Мл. Модератор": "#e2bb6d",
+    "STAFF": "#eab308", "Стафф": "#eab308",
+    "admin": "#6b7280", "Администратор": "#6b7280",
+    "admin+": "#9ca3af", "Администратор +": "#9ca3af",
+    "Владелец": "#ff3c3c", "Куратор": "#ff8c00",
+    "Разработчик": "#3a84c8",
+    "Спец. Администратор": "#d39ae1",
+    "Модератор Discord": "#bd458c",
+    "Модератор месяца": "#da5f23"
   };
   return map[groupName] || "#6b7280";
 }
@@ -153,13 +153,13 @@ function renderOnlineCard(p) {
   if (serverName) meta.push(esc(serverName));
   if (mapName) meta.push(esc(mapName));
   var playtimeStr = fmtHours(playtime);
-  if (playtimeStr && playtimeStr !== "-") meta.push(playtimeStr + " \u043d\u0430 \u0441\u0430\u0439\u0442\u0435");
+  if (playtimeStr && playtimeStr !== "-") meta.push(playtimeStr + " на сайте");
   var ageStr = fmtAge(fearCreatedAt);
   if (ageStr) meta.push(ageStr);
   if (meta.length > 0) {
     html += '<div class="flex items-center gap-1.5 flex-wrap text-[11px] text-gray-500">';
     meta.forEach(function(item, i) {
-      if (i > 0) html += '<span class="text-gray-700">\u00b7</span>';
+      if (i > 0) html += '<span class="text-gray-700">·</span>';
       html += '<span>' + item + '</span>';
     });
     html += '</div>';
@@ -179,7 +179,7 @@ function renderOnlineCard(p) {
 
 async function loadOnlineAdmins() {
   try {
-    if (onlineStatusEl) onlineStatusEl.textContent = "\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...";
+    if (onlineStatusEl) onlineStatusEl.textContent = "Загрузка...";
     var res = await fetch("/api/servers");
     var data = await res.json();
     var servers = data.servers || [];
@@ -202,14 +202,14 @@ async function loadOnlineAdmins() {
     if (onlineStatusEl) onlineStatusEl.textContent = "";
 
     if (unique.length === 0) {
-      onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">\u041d\u0438\u043a\u043e\u0433\u043e \u043d\u0435\u0442 \u043e\u043d\u043b\u0430\u0439\u043d</div>';
+      onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Никого нет онлайн</div>';
       return;
     }
 
     var html = unique.map(function(p) { return renderOnlineCard(p); }).join("");
     onlineGridEl.innerHTML = html;
   } catch (error) {
-    onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c</div>';
+    onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Не удалось загрузить</div>';
   }
 }
 
@@ -223,11 +223,11 @@ function renderRow(row) {
   else if (row.kills != null) kd = row.kills + "/0";
 
   var frozenStatus = row.is_frozen
-    ? '<span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-400">\u0437\u0430\u043c\u043e\u0440\u043e\u0436\u0435\u043d</span>'
-    : '<span class="px-2 py-0.5 rounded text-xs font-medium bg-white/10 text-gray-500">\u0430\u043a\u0442\u0438\u0432\u0435\u043d</span>';
+    ? '<span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-400">заморожен</span>'
+    : '<span class="px-2 py-0.5 rounded text-xs font-medium bg-white/10 text-gray-500">активен</span>';
   var banStatus = row.ban_is_banned
-    ? '<span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-500/20 text-rose-400">\u0437\u0430\u0431\u0430\u043d\u0435\u043d</span>'
-    : '<span class="px-2 py-0.5 rounded text-xs font-medium bg-white/10 text-gray-500">\u0447\u0438\u0441\u0442\u043e</span>';
+    ? '<span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-500/20 text-rose-400">забанен</span>'
+    : '<span class="px-2 py-0.5 rounded text-xs font-medium bg-white/10 text-gray-500">чисто</span>';
 
   var faceit = row.faceit_level != null
     ? '<a href="https://www.faceit.com/en/players/' + steamid + '" target="_blank" class="hover:underline">' + faceitBadge(row.faceit_level, row.faceit_elo) + "</a>"
@@ -264,7 +264,7 @@ function clearRows() {
   totalRows = 0;
   var s = document.createElement("tr");
   s.id = "scrollSentinel";
-  s.innerHTML = '<td colspan="13" class="px-4 py-4 text-center text-gray-500 text-sm">\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430...</td>';
+  s.innerHTML = '<td colspan="13" class="px-4 py-4 text-center text-gray-500 text-sm">Загрузка...</td>';
   rowsEl.appendChild(s);
   observer.observe(s);
 }
@@ -293,10 +293,10 @@ async function loadPage(reset) {
     rowsEl.appendChild(fragment);
 
     currentPage++;
-    if (paginationEl) paginationEl.textContent = "\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u043e " + Math.min(currentPage * PAGE_SIZE, totalRows) + " \u0438\u0437 " + totalRows;
+    if (paginationEl) paginationEl.textContent = "Показано " + Math.min(currentPage * PAGE_SIZE, totalRows) + " из " + totalRows;
     if (allCountEl) allCountEl.textContent = "(" + totalRows + ")";
   } catch (error) {
-    if (paginationEl) paginationEl.textContent = "\u041e\u0448\u0438\u0431\u043a\u0430: " + error.message;
+    if (paginationEl) paginationEl.textContent = "Ошибка: " + error.message;
   } finally {
     loading = false;
   }
@@ -335,16 +335,16 @@ if (refreshBtn) {
   refreshBtn.addEventListener("click", async function() {
     try {
       refreshBtn.disabled = true;
-      refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise animate-spin"></i> \u041e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435...';
+      refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise animate-spin"></i> Обновление...';
       var response = await fetch("/api/refresh", { method: "POST" });
       var data = await response.json();
-      if (!response.ok) throw new Error(data.error || "\u041e\u0448\u0438\u0431\u043a\u0430");
+      if (!response.ok) throw new Error(data.error || "Ошибка");
       setTimeout(function() { loadOnlineAdmins(); }, 3000);
     } catch (error) {
       alert(error.message);
     } finally {
       refreshBtn.disabled = false;
-      refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> \u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c';
+      refreshBtn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Обновить';
     }
   });
 }
