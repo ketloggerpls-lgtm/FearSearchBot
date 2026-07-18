@@ -151,6 +151,8 @@
 
         function renderRow(s, idx) {
             var fearUrl = "https://fearproject.ru/profile/" + s.steamid;
+            var bansUrl = "https://davidonchik.online/admin/" + s.steamid + "?type=1";
+            var mutesUrl = "https://davidonchik.online/admin/" + s.steamid + "?type=2";
             var color = getRoleColor(s.role_label);
             return '<div class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors">'
                 + '<span class="text-gray-600 text-sm font-mono w-5 text-right">' + idx + ".</span>"
@@ -161,8 +163,8 @@
                 + (s.role_label ? '<span class="text-xs ml-2 px-1.5 py-0.5 rounded" style="background:' + color + '20;color:' + color + '">' + esc(s.role_label) + '</span>' : '')
                 + "</div>"
                 + '<div class="flex items-center gap-3 text-xs shrink-0">'
-                + '<span title="Баны"><span class="text-gray-500"><i class="ph ph-hammer"></i></span> <span class="text-amber-400 font-semibold">' + (s.bans||0) + "</span></span>"
-                + '<span title="Муты"><span class="text-gray-500"><i class="ph ph-megaphone"></i></span> <span class="text-purple-400 font-semibold">' + (s.mutes||0) + "</span></span>"
+                + '<a href="' + bansUrl + '" target="_blank" title="Баны на davidonchik.online" class="hover:opacity-80 transition-opacity"><span class="text-gray-500"><i class="ph ph-hammer"></i></span> <span class="text-amber-400 font-semibold">' + (s.bans||0) + "</span></a>"
+                + '<a href="' + mutesUrl + '" target="_blank" title="Муты на davidonchik.online" class="hover:opacity-80 transition-opacity"><span class="text-gray-500"><i class="ph ph-megaphone"></i></span> <span class="text-purple-400 font-semibold">' + (s.mutes||0) + "</span></a>"
                 + '<span title="Всего"><span class="text-gray-500"><i class="ph ph-chart-line"></i></span> <span class="text-white font-semibold">' + (s.total||0) + "</span></span>"
                 + '<span title="Снято"><span class="text-gray-500"><i class="ph ph-scissors"></i></span> <span class="text-gray-400 font-semibold">' + (s.removed||0) + "</span></span>"
                 + "</div></div>";
