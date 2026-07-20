@@ -846,6 +846,19 @@ loadOnlineAdmins();
 loadDashboardStats();
 setInterval(loadDashboardStats, 30000);
 
+// Auto-refresh active tabs every 30s
+setInterval(function() {
+  document.querySelectorAll(".sidebar-nav-btn.active").forEach(function(btn) {
+    var tab = btn.dataset.tab;
+    if (tab === "online") { loadOnlineAdmins(); loadDashboardStats(); }
+    if (tab === "stats") loadStats();
+    if (tab === "logs") loadLogs(logsPage);
+    if (tab === "mystats") loadMyStats();
+    if (tab === "players") loadAllPlayersTab();
+    if (tab === "adminpanel") { loadAdminPanel(); loadOwnerSystem(); loadTabAccess(); }
+  });
+}, 30000);
+
 var currentMyStatsPeriod = "this-month";
 
 function loadMyStats() {
@@ -1534,12 +1547,3 @@ if (playersSearchInput) {
     }, 300);
   });
 }
-
-// Auto-refresh admin panel every 30s
-setInterval(function() {
-  var adminTab = document.getElementById("tab-adminpanel");
-  if (adminTab && adminTab.classList.contains("active")) {
-    loadAdminPanel();
-    loadOwnerSystem();
-  }
-}, 30000);
