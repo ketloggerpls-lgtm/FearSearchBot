@@ -1310,7 +1310,7 @@ function startOnlinePoller() {
         await db.query(
           `INSERT INTO server_online_history (ts, online, admins_online, players_online, peak_online, servers_json)
            VALUES (NOW(), $1, $2, $3, $4, $5)`,
-          [playersOnline, adminsOnline, playersOnline, _onlinePollerPeak, JSON.stringify(servers.map(s => ({ name: s.site_name, players: ((s.live_data && s.live_data.players) || []).length, map: s.live_data?.map_name || s.map }))).slice(0, 2000)]
+          [playersOnline, adminsOnline, playersOnline, _onlinePollerPeak, JSON.stringify({ count: servers.length, servers: servers.slice(0, 10).map(s => ({ name: s.site_name, players: ((s.live_data && s.live_data.players) || []).length })) })]
         );
         logger.info("Online snapshot saved", { playersOnline, adminsOnline, peak: _onlinePollerPeak });
       }
