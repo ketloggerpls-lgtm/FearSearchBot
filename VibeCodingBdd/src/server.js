@@ -40,6 +40,7 @@ const {
   updateTabAccess
 } = require("./db");
 const { FearAuthError, fetchAdmins, fetchProfile, fetchJson } = require("./fearApi");
+const { fetchSteamAccountCreationDates } = require("./steamApi");
 const logger = require("./logger");
 const { notifyAuthFailure, markAuthRecovered } = require("./notify");
 const { startStaffPunishmentsSync, syncAllStaffPunishments } = require("./punishmentsSync");
@@ -736,9 +737,13 @@ app.get("/api/all-players-live", async (_req, res) => {
       }
     }
     const uniqueSteamids = [...new Set(allPlayers.map(p => p.steam_id))];
-    const profilesMap = await getProfilesBySteamids(uniqueSteamids);
+    const [profilesMap, steamDates] = await Promise.all([
+      getProfilesBySteamids(uniqueSteamids),
+      fetchSteamAccountCreationDates(uniqueSteamids)
+    ]);
     const result = allPlayers.map(p => {
       const prof = profilesMap[p.steam_id] || {};
+      const steamTimeCreated = steamDates[p.steam_id] || p.steam_timecreated || 0;
       return {
         steamid: p.steam_id,
         nickname: p.nickname,
@@ -756,7 +761,7 @@ app.get("/api/all-players-live", async (_req, res) => {
         game_type: p.game_type,
         steam_avatarfull: p.steam_avatarfull,
         steam_personaname: p.steam_personaname,
-        steam_timecreated: p.steam_timecreated,
+        steam_timecreated: steamTimeCreated,
         steam_profilestate: p.steam_profilestate,
         steam_avatarhash: p.steam_avatarhash,
         db_name: prof.name || null,

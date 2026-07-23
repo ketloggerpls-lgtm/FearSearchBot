@@ -1724,7 +1724,7 @@ function loadLivePlayers() {
   listEl.innerHTML = '<div class="space-y-1"><div class="skeleton h-[40px]"></div><div class="skeleton h-[40px]"></div><div class="skeleton h-[40px]"></div></div>';
   fetch("/api/all-players-live").then(function(r){return r.json()}).then(function(data) {
     livePlayersData = data.players || [];
-    totalEl.textContent = livePlayersData.length;
+    if (totalEl) totalEl.textContent = livePlayersData.length ? '(20 из ' + livePlayersData.length + ')' : '(0)';
     renderLivePlayersList();
   }).catch(function(err) {
     listEl.innerHTML = '<div class="text-center text-red-400 text-xs py-4">Ошибка: ' + esc(err.message) + '</div>';
@@ -1751,7 +1751,9 @@ function renderLivePlayersList() {
     listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">Нет игроков</div>';
     return;
   }
-  listEl.innerHTML = filtered.map(function(p) { return renderLivePlayerCard(p); }).join("");
+  // Show only 20 players unless searching
+  var display = q ? filtered : filtered.slice(0, 20);
+  listEl.innerHTML = display.map(function(p) { return renderLivePlayerCard(p); }).join("");
 }
 
 function loadUnconfigured() {
