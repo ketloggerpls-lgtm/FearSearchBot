@@ -1003,9 +1003,9 @@ app.get("/api/analytics/overview", requireOwner, async (_req, res) => {
     const avg7d = (await db.query(`SELECT COALESCE(AVG(online), 0)::int as avg FROM server_online_history WHERE ts > NOW() - INTERVAL '7 days'`)).rows[0];
     const peak30d = (await db.query(`SELECT COALESCE(MAX(peak_online), 0) as peak FROM server_online_history WHERE ts > NOW() - INTERVAL '30 days'`)).rows[0];
     const avg30d = (await db.query(`SELECT COALESCE(AVG(online), 0)::int as avg FROM server_online_history WHERE ts > NOW() - INTERVAL '30 days'`)).rows[0];
-    const totalDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drop_log`)).rows[0];
-    const todayDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drop_log WHERE created_at > NOW() - INTERVAL '24 hours'`)).rows[0];
-    const totalDropValue = (await db.query(`SELECT COALESCE(SUM(price), 0)::int as val FROM drop_log`)).rows[0];
+    const totalDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drops`)).rows[0];
+    const todayDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drops WHERE created_at > NOW() - INTERVAL '24 hours'`)).rows[0];
+    const totalDropValue = (await db.query(`SELECT COALESCE(SUM(price), 0)::int as val FROM drops`)).rows[0];
     res.json({
       peakOnline: peak24h.peak, avgOnline: avg24h.avg,
       peakOnline7d: peak7d.peak, avgOnline7d: avg7d.avg,
@@ -1083,8 +1083,8 @@ app.get("/api/analytics/staff-top", requireOwner, async (req, res) => {
 app.get("/api/analytics/drops-summary", requireOwner, async (_req, res) => {
   try {
     const db = require("./db").pool;
-    const total = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players, COALESCE(SUM(price), 0)::int as value FROM drop_log`)).rows[0];
-    const today = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players FROM drop_log WHERE created_at > NOW() - INTERVAL '24 hours'`)).rows[0];
+    const total = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players, COALESCE(SUM(price), 0)::int as value FROM drops`)).rows[0];
+    const today = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players FROM drops WHERE created_at > NOW() - INTERVAL '24 hours'`)).rows[0];
     res.json({ totalSkins: total.skins, totalPlayers: total.players, totalValue: total.value, todaySkins: today.skins, todayPlayers: today.players });
   } catch (error) { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -1099,8 +1099,8 @@ app.get("/api/analytics/drops", requireOwner, async (req, res) => {
     if (period === 0) where = "WHERE created_at > NOW() - INTERVAL '24 hours'";
     else if (period === 1) where = "WHERE created_at > NOW() - INTERVAL '7 days'";
     else if (period === 2) where = "WHERE created_at > NOW() - INTERVAL '30 days'";
-    const total = (await db.query(`SELECT COUNT(*)::int as cnt FROM drop_log ${where}`)).rows[0].cnt;
-    const r = await db.query(`SELECT steamid, player_name, skin_name, skin_weapon, price, created_at FROM drop_log ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, page * limit]);
+    const total = (await db.query(`SELECT COUNT(*)::int as cnt FROM drops ${where}`)).rows[0].cnt;
+    const r = await db.query(`SELECT steamid, '' as player_name, name as skin_name, split_part(name, ' | ', 1) as skin_weapon, price, created_at FROM drops ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, page * limit]);
     res.json({ drops: r.rows, total, page, limit });
   } catch (error) { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -1290,8 +1290,9 @@ function startOnlinePoller() {
            VALUES (NOW(), $1, $2, $3, $4, $5)`,
           [playersOnline, adminsOnline, playersOnline, _onlinePollerPeak, JSON.stringify(servers.map(s => ({ name: s.site_name, players: ((s.live_data && s.live_data.players) || []).length, map: s.live_data?.map_name || s.map }))).slice(0, 2000)]
         );
+        logger.info("Online snapshot saved", { playersOnline, adminsOnline, peak: _onlinePollerPeak });
       }
-    } catch (e) { /* silent */ }
+    } catch (e) { logger.warn("Online poller failed", { error: e.message }); }
   }, 15000);
   logger.info("Online poller started (every 15s, hourly snapshots)");
 }
@@ -1301,8 +1302,8 @@ function startDropFeedPoller() {
   setInterval(async () => {
     try {
       const { fetchJson } = require("./fearApi");
-      const feed = await fetchJson("/drops/feed");
-      const drops = Array.isArray(feed) ? feed : (feed.drops || feed.data || []);
+      const data = await fetchJson("/drops/feed");
+      const drops = Array.isArray(data) ? data : (data.feed || data.drops || data.data || []);
       if (!drops.length) return;
       const db = require("./db").pool;
       for (const d of drops) {
@@ -1477,7 +1478,7 @@ initDb()
       startAutoRefresh();
       startStaffPunishmentsSync();
       startOnlinePoller();
-      startDropFeedPoller();
+      // Drops are read from the shared bot 'drops' table; no need to duplicate API polling here
       // Auto-refresh on startup to populate DB
       if (!refreshInProgress) {
         logger.info("Auto refresh on startup");

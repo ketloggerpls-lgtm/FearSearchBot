@@ -1086,9 +1086,9 @@ function loadOwnerSystem() {
     el.innerHTML = '<div class="col-span-full text-center py-3"><div class="text-gray-500 text-xs">Настройки владельца</div><div class="text-red-400 text-[11px] mt-1">Нет доступа или ошибка загрузки</div></div>';
   });
 
-  // Bot status from health endpoint
+  // Bot status from refresh-status endpoint
   if (botEl) {
-    fetchWithTimeout("/api/health", {}, 10000).then(function(r){ return r.json(); }).then(function(d) {
+    fetchWithTimeout("/api/refresh-status", {}, 10000).then(function(r){ return r.json(); }).then(function(d) {
       var last = d.lastRefreshInfo || {};
       var status = d.refreshInProgress ? '<span class="text-amber-400">Обновление...</span>' : '<span class="text-emerald-400">Активен</span>';
       var finished = last.finishedAt ? fmtAge(last.finishedAt) : '—';

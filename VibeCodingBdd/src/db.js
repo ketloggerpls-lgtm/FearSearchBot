@@ -227,10 +227,10 @@ async function initDb() {
       [t.id, t.min]
     );
   }
-  // Новые вкладки — UPSERT чтобы добавить в существующую БД
+  // Новые вкладки — добавляем если нет, не перезаписываем пользовательские настройки
   for (const t of [{ id: 'analytics', min: 7 }, { id: 'players', min: 7 }]) {
     await pool.query(
-      `INSERT INTO tab_access (tab_id, min_role_rank, enabled) VALUES ($1, $2, TRUE) ON CONFLICT (tab_id) DO UPDATE SET min_role_rank = LEAST(tab_access.min_role_rank, EXCLUDED.min_role_rank), enabled = TRUE`,
+      `INSERT INTO tab_access (tab_id, min_role_rank, enabled) VALUES ($1, $2, TRUE) ON CONFLICT (tab_id) DO NOTHING`,
       [t.id, t.min]
     );
   }
