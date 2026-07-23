@@ -954,11 +954,6 @@ function loadMyStats(showLoading) {
     }
   });
 }
-    el.innerHTML = html;
-  }).catch(function(err) {
-    el.innerHTML = '<div class="glass-panel rounded-xl p-6 text-center"><div class="text-red-400 text-sm">Ошибка загрузки: ' + esc(err.message) + '</div></div>';
-  });
-}
 
 function deleteSiteUser(userId, username) {
   if (!confirm("Удалить пользователя " + username + "? Это действие необратимо.")) return;
