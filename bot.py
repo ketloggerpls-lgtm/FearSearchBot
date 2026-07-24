@@ -11559,8 +11559,11 @@ def _ts_to_ym(ts: int) -> str:
     steamid="SteamID админа",
     rank="Ранг проверки",
     period="Период расчёта",
-    tickets="Количество тикетов (если не указано — из БД за месяц/прошлый месяц, для week=0)",
-    ticket_top_place="Ручное место в топе по тикетам (1–3). Если не указано — из БД"
+    bans="Баны вручную (если не указано — из БД)",
+    mutes="Муты вручную (если не указано — из БД)",
+    tickets="Тикеты вручную (если не указано — из БД)",
+    punish_top_place="Место в топе по наказаниям вручную",
+    ticket_top_place="Место в топе по тикетам вручную",
 )
 @app_commands.choices(
     rank=[
@@ -11575,10 +11578,17 @@ def _ts_to_ym(ts: int) -> str:
         app_commands.Choice(name="Прошлый месяц", value="prev_month"),
         app_commands.Choice(name="Последние 7 дней", value="week"),
     ],
+    punish_top_place=[
+        app_commands.Choice(name="🥇 1 место", value=1),
+        app_commands.Choice(name="🥈 2 место", value=2),
+        app_commands.Choice(name="🥉 3 место", value=3),
+        app_commands.Choice(name="не занимает топ", value=0),
+    ],
     ticket_top_place=[
-        app_commands.Choice(name="1 место", value=1),
-        app_commands.Choice(name="2 место", value=2),
-        app_commands.Choice(name="3 место", value=3),
+        app_commands.Choice(name="🥇 1 место", value=1),
+        app_commands.Choice(name="🥈 2 место", value=2),
+        app_commands.Choice(name="🥉 3 место", value=3),
+        app_commands.Choice(name="не занимает топ", value=0),
     ]
 )
 async def cmd_calc_pay(
@@ -11586,7 +11596,10 @@ async def cmd_calc_pay(
     steamid: str,
     rank: app_commands.Choice[str],
     period: app_commands.Choice[str] = None,
+    bans: int = None,
+    mutes: int = None,
     tickets: int = None,
+    punish_top_place: app_commands.Choice[int] = None,
     ticket_top_place: app_commands.Choice[int] = None,
 ):
     await interaction.response.defer(ephemeral=True)
@@ -11610,47 +11623,61 @@ async def cmd_calc_pay(
     role = _group_to_pay_role(group)
 
     # Получаем количество наказаний (без снятых и тикет-причин)
-    # Сначала пробуем таблицу сайта panel_fear_punishments (там актуальные данные),
-    # если не получилось — fallback на локальную таблицу punishments бота.
+    # Ручные значения имеют приоритет.
     counts = {"bans": 0, "mutes": 0}
-    table_used = "—"
-    if _db.db_is_available():
-        try:
-            counts = _db.db_get_admin_punishment_counts_panel(steamid, since_ts, until_ts)
-            if counts.get("bans", 0) or counts.get("mutes", 0):
-                table_used = "panel_fear_punishments"
-            else:
-                counts = _db.db_get_admin_punishment_counts(steamid, since_ts, until_ts)
-                table_used = "punishments"
-        except Exception as e:
-            _log(f"⚠️ [calc_pay] Ошибка получения наказаний: {e}", discord=False)
+    table_used = "manual"
+    if bans is None or mutes is None:
+        table_used = "—"
+        if _db.db_is_available():
             try:
-                counts = _db.db_get_admin_punishment_counts(steamid, since_ts, until_ts)
-                table_used = "punishments"
-            except Exception as e2:
-                _log(f"⚠️ [calc_pay] Ошибка fallback наказаний: {e2}", discord=False)
+                counts = _db.db_get_admin_punishment_counts_panel(steamid, since_ts, until_ts)
+                if counts.get("bans", 0) or counts.get("mutes", 0):
+                    table_used = "panel_fear_punishments"
+                else:
+                    counts = _db.db_get_admin_punishment_counts(steamid, since_ts, until_ts)
+                    table_used = "punishments"
+            except Exception as e:
+                _log(f"⚠️ [calc_pay] Ошибка получения наказаний: {e}", discord=False)
+                try:
+                    counts = _db.db_get_admin_punishment_counts(steamid, since_ts, until_ts)
+                    table_used = "punishments"
+                except Exception as e2:
+                    _log(f"⚠️ [calc_pay] Ошибка fallback наказаний: {e2}", discord=False)
 
-    bans = int(counts.get("bans", 0))
-    mutes = int(counts.get("mutes", 0))
+    bans = max(0, int(bans)) if bans is not None else int(counts.get("bans", 0))
+    mutes = max(0, int(mutes)) if mutes is not None else int(counts.get("mutes", 0))
     punish_count = bans + mutes
 
-    # Тикеты: для week = 0, для month/prev_month — из БД или параметра
+    # Тикеты: ручное значение приоритет, затем БД
     ticket_count = 0
-    if period_value in ("month", "prev_month"):
-        if tickets is not None:
-            ticket_count = max(0, int(tickets))
-        elif _db.db_is_available():
-            try:
-                ticket_count = _db.db_get_admin_tickets_month(steamid, ym)
-            except Exception as e:
-                _log(f"⚠️ [calc_pay] Ошибка получения тикетов: {e}", discord=False)
+    if tickets is not None:
+        ticket_count = max(0, int(tickets))
+    elif period_value in ("month", "prev_month") and _db.db_is_available():
+        try:
+            ticket_count = _db.db_get_admin_tickets_month(steamid, ym)
+        except Exception as e:
+            _log(f"⚠️ [calc_pay] Ошибка получения тикетов: {e}", discord=False)
 
     # Топ-призы
+    def _format_top_place(place):
+        if place == 1:
+            return "🥇 1 место"
+        if place == 2:
+            return "🥈 2 место"
+        if place == 3:
+            return "🥉 3 место"
+        return "не занимает топ"
+
     top_punish_prize = 0
     top_ticket_prize = 0
     top_punish_place = 0
     top_ticket_place = 0
-    if _db.db_is_available():
+
+    if punish_top_place is not None:
+        top_punish_place = punish_top_place.value
+        if 1 <= top_punish_place <= 3:
+            top_punish_prize = _PAY_TOP_PUNISH_PRIZES[top_punish_place - 1]
+    elif _db.db_is_available():
         try:
             top_punish = _db.db_get_top_punish_admins_panel(since_ts, until_ts, limit=3)
             if not top_punish:
@@ -11658,26 +11685,25 @@ async def cmd_calc_pay(
             for i, row in enumerate(top_punish, 1):
                 if str(row.get("admin_steamid") or "").strip() == str(steamid).strip():
                     top_punish_place = i
-                    top_punish_prize = _PAY_TOP_PUNISH_PRIZES[i - 1] or 0
+                    top_punish_prize = _PAY_TOP_PUNISH_PRIZES[i - 1]
                     break
         except Exception as e:
             _log(f"⚠️ [calc_pay] Ошибка топа наказаний: {e}", discord=False)
 
-        if period_value in ("month", "prev_month"):
-            if ticket_top_place is not None:
-                place = ticket_top_place.value
-                top_ticket_place = place
-                top_ticket_prize = _PAY_TOP_TICKET_PRIZES[place - 1] or 0
-            elif _db.db_is_available():
-                try:
-                    top_ticket = _db.db_get_top_ticket_admins(ym, limit=3)
-                    for i, row in enumerate(top_ticket, 1):
-                        if str(row.get("steam_id") or "").strip() == str(steamid).strip():
-                            top_ticket_place = i
-                            top_ticket_prize = _PAY_TOP_TICKET_PRIZES[i - 1] or 0
-                            break
-                except Exception as e:
-                    _log(f"⚠️ [calc_pay] Ошибка топа тикетов: {e}", discord=False)
+    if ticket_top_place is not None:
+        top_ticket_place = ticket_top_place.value
+        if 1 <= top_ticket_place <= 3:
+            top_ticket_prize = _PAY_TOP_TICKET_PRIZES[top_ticket_place - 1]
+    elif period_value in ("month", "prev_month") and _db.db_is_available():
+        try:
+            top_ticket = _db.db_get_top_ticket_admins(ym, limit=3)
+            for i, row in enumerate(top_ticket, 1):
+                if str(row.get("steam_id") or "").strip() == str(steamid).strip():
+                    top_ticket_place = i
+                    top_ticket_prize = _PAY_TOP_TICKET_PRIZES[i - 1]
+                    break
+        except Exception as e:
+            _log(f"⚠️ [calc_pay] Ошибка топа тикетов: {e}", discord=False)
 
     # Расчёт
     pay_bans = _pay_bans_by_count(bans)
@@ -11721,8 +11747,8 @@ async def cmd_calc_pay(
     embed.add_field(name="🎫 Тикеты", value=f"{ticket_count} (+{pay_tickets} ₽)", inline=True)
     embed.add_field(name="📊 Норма", value=f"{norms['punish']} наказ / {norms['tickets']} тикетов", inline=True)
     embed.add_field(name="💵 Фикс", value=f"{fixed_paid} ₽ (база {fixed} ₽)", inline=True)
-    embed.add_field(name="🏆 Топ наказания", value=f"{top_punish_place or '—'} место (+{top_punish_prize} ₽)", inline=True)
-    embed.add_field(name="🏆 Топ тикеты", value=f"{top_ticket_place or '—'} место (+{top_ticket_prize} ₽)", inline=True)
+    embed.add_field(name="🏆 Топ наказания", value=f"{_format_top_place(top_punish_place)} (+{top_punish_prize} ₽)", inline=True)
+    embed.add_field(name="🏆 Топ тикеты", value=f"{_format_top_place(top_ticket_place)} (+{top_ticket_prize} ₽)", inline=True)
     embed.add_field(name="💵 Итого", value=f"**{total} ₽**", inline=True)
     embed.set_footer(text=f"Источник: {table_used} • Снятые и 'тикет в дс' исключены • Топ-призы за текущий период")
 
