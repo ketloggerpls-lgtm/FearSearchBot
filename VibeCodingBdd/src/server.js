@@ -1027,7 +1027,7 @@ app.get("/api/analytics/overview", requireOwner, async (_req, res) => {
     const avg30d = (await db.query(`SELECT COALESCE(AVG(online), 0)::int as avg FROM server_online_history WHERE ts > NOW() - INTERVAL '30 days'`)).rows[0];
     const totalDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drops`)).rows[0];
     const todayDrops = (await db.query(`SELECT COUNT(*)::int as cnt FROM drops WHERE created_at > NOW() - INTERVAL '24 hours'`)).rows[0];
-    const totalDropValue = (await db.query(`SELECT COALESCE(SUM(price), 0)::int as val FROM drops`)).rows[0];
+    const totalDropValue = (await db.query(`SELECT COALESCE(SUM(price), 0)::numeric(12,2) as val FROM drops`)).rows[0];
     res.json({
       peakOnline: peak24h.peak, avgOnline: avg24h.avg,
       peakOnline7d: peak7d.peak, avgOnline7d: avg7d.avg,
@@ -1104,13 +1104,13 @@ app.get("/api/analytics/staff-top", requireOwner, async (req, res) => {
 
 app.get("/api/analytics/drops-summary", requireOwner, async (req, res) => {
   try {
-    const period = Number(req.query.period) || -1;
+    const period = req.query.period !== undefined ? Number(req.query.period) : -1;
     const db = require("./db").pool;
     let where = '';
     if (period === 0) where = "WHERE created_at > NOW() - INTERVAL '24 hours'";
     else if (period === 1) where = "WHERE created_at > NOW() - INTERVAL '7 days'";
     else if (period === 2) where = "WHERE created_at > NOW() - INTERVAL '30 days'";
-    const total = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players, COALESCE(SUM(price), 0)::int as value FROM drops ${where}`)).rows[0];
+    const total = (await db.query(`SELECT COUNT(*)::int as skins, COUNT(DISTINCT steamid)::int as players, COALESCE(SUM(price), 0)::numeric(12,2) as value FROM drops ${where}`)).rows[0];
     res.json({ totalSkins: total.skins, totalPlayers: total.players, totalValue: total.value });
   } catch (error) { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -1321,35 +1321,6 @@ function startOnlinePoller() {
     } catch (e) { logger.warn("Online poller failed", { error: e.message }); }
   }, 15000);
   logger.info("Online poller started (every 15s, hourly snapshots)");
-}
-
-// ── Drop feed poller: polls fearproject.ru/api/drops/feed every 30s ──
-function startDropFeedPoller() {
-  setInterval(async () => {
-    try {
-      const { fetchJson } = require("./fearApi");
-      const data = await fetchJson("/drops/feed");
-      const drops = Array.isArray(data) ? data : (data.feed || data.drops || data.data || []);
-      if (!drops.length) return;
-      const db = require("./db").pool;
-      for (const d of drops) {
-        const steamid = d.steamid || d.steam_id || d.player_steamid || null;
-        const skinName = d.skin_name || d.name || d.weapon_name || '';
-        if (!steamid || !skinName) continue;
-        const existing = await db.query(
-          `SELECT id FROM drop_log WHERE steamid = $1 AND skin_name = $2 AND created_at > NOW() - INTERVAL '5 minutes'`,
-          [steamid, skinName]
-        );
-        if (existing.rows.length > 0) continue;
-        await db.query(
-          `INSERT INTO drop_log (steamid, player_name, skin_name, skin_weapon, skin_wear, price)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [steamid, d.player_name || d.nickname || '', skinName, d.skin_weapon || d.weapon || '', d.skin_wear || d.wear || '', d.price || 0]
-        );
-      }
-    } catch (e) { /* silent */ }
-  }, 30000);
-  logger.info("Drop feed poller started (every 30s)");
 }
 
 // ===================== OWNER SETTINGS =====================

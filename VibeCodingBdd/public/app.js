@@ -1331,7 +1331,6 @@ function loadAnalytics() {
       + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-orange-400">' + (d.todayDrops || 0) + '</div><div class="text-[10px] text-gray-500">Дропов сегодня</div></div>';
   }).catch(function(){});
   loadAnalyticsOnlineChart();
-  loadAnalyticsDropsSummary();
   loadAnalyticsDrops(0);
 }
 
@@ -1398,9 +1397,7 @@ function loadAnalyticsDropsSummary(period) {
 }
 
 var analyticsDropPage = 0;
-var currentAnalyticsDropPeriod = 0;
 function loadAnalyticsDrops(period) {
-  currentAnalyticsDropPeriod = period;
   analyticsDropPage = 0;
   document.querySelectorAll('#tab-analytics [id^="dropsAllBtn"],#tab-analytics [id^="dropsDayBtn"],#tab-analytics [id^="dropsWeekBtn"],#tab-analytics [id^="dropsMonthBtn"]').forEach(function(b) {
     b.className = 'px-3 py-1 rounded-lg text-[11px] font-medium border border-white/10 text-gray-500';
